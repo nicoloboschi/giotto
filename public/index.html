@@ -5,74 +5,67 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Giotto</title>
   <style>
-    /* Colors from Giotto's frescoes: lapis blue, gold, warm plaster. */
-    :root { --lapis: #1e3a8a; --lapis-2: #142a6b; --gold: #e3a92b; --gold-soft: #f3d58a; --red: #d9534a;
-      --bg: #f6f1e7; --paper: #fffdf8; --fg: #1f2937; --muted: #6b7280; --line: #e6dccb; --hover: #efe6d4; }
-    body.dark { --bg: #14161b; --paper: #1b1e25; --fg: #e5e7eb; --muted: #9ca3af; --line: #2b303b; --hover: #252a35; }
-    html, body { margin: 0; height: 100%; font: 14px system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+    :root { --bg: #ffffff; --panel: #fbfbfa; --fg: #1f2328; --muted: #6e7681; --line: #e6e6e3; --hover: #f1f1ef; --active: #ececea; --accent: #2563eb; }
+    body.dark { --bg: #16171b; --panel: #1b1c21; --fg: #e6e6e6; --muted: #8b8f98; --line: #2a2c33; --hover: #24262c; --active: #2b2d34; --accent: #6b9bff; }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
     button, input { font: inherit; color: inherit; }
     #layout { display: flex; height: 100%; }
 
-    aside { width: 250px; flex: none; display: flex; flex-direction: column; color: #e8edf9;
-      background: linear-gradient(180deg, var(--lapis) 0%, var(--lapis-2) 100%); }
-    .brand { display: flex; align-items: center; gap: 10px; padding: 18px 16px 4px; }
-    .brand b { font: 600 21px Georgia, "Iowan Old Style", serif; letter-spacing: .3px; color: #fff; }
-    .tagline { padding: 0 16px 14px 52px; color: var(--gold-soft); font-size: 12px; }
-    #list { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
-    #list button { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; border: 0; border-radius: 10px; padding: 9px 10px;
-      background: transparent; cursor: pointer; margin-bottom: 2px; }
-    #list button:hover { background: rgba(255,255,255,.08); }
-    #list button.on { background: rgba(227,169,43,.18); box-shadow: inset 3px 0 var(--gold); }
-    #list .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; }
-    #list .t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-    #list small { display: block; color: #aebbdc; font-size: 12px; margin-top: 2px; }
-    #list > div { min-width: 0; }
-    .side-foot { padding: 10px 16px 14px; font-size: 11px; color: #9fb0d8; border-top: 1px solid rgba(255,255,255,.08); }
+    aside { width: 240px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 8px; height: 49px; padding: 0 14px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 14px; }
+    .brand svg { color: var(--fg); }
+    #list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px; }
+    #list button { display: block; width: 100%; text-align: left; border: 0; border-radius: 6px; padding: 7px 10px; background: transparent; cursor: pointer; }
+    #list button:hover { background: var(--hover); }
+    #list button.on { background: var(--active); }
+    #list .t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11.5px; }
 
     main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
-    header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--paper); border-bottom: 1px solid var(--line); }
-    #title { flex: 1; min-width: 0; border: 0; background: transparent; font: 600 16px system-ui, sans-serif; padding: 5px 6px; border-radius: 8px; }
+    header { display: flex; align-items: center; gap: 6px; height: 49px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    #title { flex: 1; min-width: 0; border: 0; background: transparent; font-weight: 600; font-size: 14px; padding: 5px 6px; border-radius: 6px; }
     #title:hover, #title:focus { background: var(--hover); outline: 0; }
     #status { color: var(--muted); font-size: 12px; white-space: nowrap; }
-    #search { width: 170px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; background: var(--bg); outline: 0; }
-    #search:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(227,169,43,.2); }
-    .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 9px; padding: 6px 11px; background: var(--paper); cursor: pointer; white-space: nowrap; }
+    #search { width: 170px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; background: var(--bg); outline: 0; }
+    #search:focus { border-color: var(--accent); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 29px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; background: var(--bg); cursor: pointer; white-space: nowrap; }
     .btn:hover { background: var(--hover); }
-    .seg { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--paper); }
-    .seg span { padding: 0 8px 0 11px; color: var(--muted); font-size: 12px; }
-    .seg button { border: 0; border-left: 1px solid var(--line); padding: 6px 10px; background: transparent; cursor: pointer; font-weight: 600; font-size: 12px; }
-    .seg button:hover { background: var(--lapis); color: #fff; }
-    .sw { display: inline-block; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.18) inset; margin-right: -3px; }
-    .sws { display: inline-flex; padding-right: 4px; }
+    .seg { display: inline-flex; height: 29px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--bg); }
+    .seg button { border: 0; padding: 0 10px; background: transparent; cursor: pointer; }
+    .seg span { display: flex; align-items: center; padding: 0 9px; color: var(--muted); border-right: 1px solid var(--line); }
+    .seg button + button { border-left: 1px solid var(--line); }
+    .seg button:hover { background: var(--hover); }
+    .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.15) inset; margin-right: -3px; }
+    .sws { display: inline-flex; padding-right: 3px; }
 
     #stage { flex: 1; position: relative; overflow: hidden; }
     #canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: crosshair; }
     #canvas.space { cursor: grab; }
     #canvas [data-id] { cursor: move; }
     #canvas.panning, #canvas.space.panning { cursor: grabbing; }
-    #edit { position: absolute; display: none; z-index: 2; resize: none; border: 2px solid var(--gold); border-radius: 8px; padding: 4px 6px;
-      font-size: 16px; text-align: center; background: #fff; color: #1f2937; outline: 0; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
-    #empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); }
+    #edit { position: absolute; display: none; z-index: 2; resize: none; border: 1px solid var(--accent); border-radius: 6px; padding: 4px 6px;
+      font-size: 15px; text-align: center; background: #fff; color: #1f2328; outline: 0; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+    #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
     #empty[hidden] { display: none; }
-    #empty p { margin: 12px 0 0; }
 
-    #gallery { position: absolute; right: 12px; top: 54px; z-index: 5; width: min(600px, calc(100% - 24px)); max-height: calc(100% - 72px); overflow-y: auto;
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; padding: 12px;
-      background: var(--paper); border: 1px solid var(--line); border-top: 3px solid var(--gold); border-radius: 12px; box-shadow: 0 12px 40px rgba(20,42,107,.25); }
+    #gallery { position: absolute; right: 10px; top: 55px; z-index: 5; width: min(580px, calc(100% - 20px)); max-height: calc(100% - 70px); overflow-y: auto;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 8px; padding: 10px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
     #gallery[hidden] { display: none; }
-    #gallery button { border: 2px solid transparent; border-radius: 10px; padding: 6px; background: var(--bg); cursor: pointer; text-align: left; }
-    #gallery button:hover { border-color: var(--line); }
-    #gallery button.on { border-color: var(--lapis); }
-    #gallery img { display: block; width: 100%; height: 100px; object-fit: contain; border-radius: 6px; margin-bottom: 6px; }
+    #gallery button { border: 1px solid var(--line); border-radius: 6px; padding: 6px; background: var(--bg); cursor: pointer; text-align: left; min-width: 0; }
+    #gallery button:hover { background: var(--hover); }
+    #gallery button.on { border-color: var(--accent); }
+    #gallery img { display: block; width: 100%; height: 96px; object-fit: contain; border-radius: 4px; margin-bottom: 6px; }
     #gallery .row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-    #gallery small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
-    #gallery p { grid-column: 1 / -1; margin: 2px 4px; color: var(--muted); font-size: 12px; }
+    #gallery strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    #gallery small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+    #gallery p { grid-column: 1 / -1; margin: 2px; color: var(--muted); font-size: 12px; }
 
-    #toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 4; padding: 9px 16px; border-radius: 999px;
-      background: var(--lapis); color: #fff; font-size: 13px; pointer-events: none; transition: opacity .2s; box-shadow: 0 6px 20px rgba(20,42,107,.3); }
+    #toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 4; padding: 7px 12px; border-radius: 6px;
+      background: var(--fg); color: var(--bg); font-size: 12.5px; pointer-events: none; transition: opacity .15s; }
     #toast[hidden] { display: block; opacity: 0; }
-    #hint { position: absolute; left: 12px; bottom: 10px; padding: 4px 10px; border-radius: 999px; background: var(--paper); border: 1px solid var(--line);
-      color: var(--muted); font-size: 11.5px; pointer-events: none; opacity: .92; }
+    #hint { position: absolute; left: 12px; bottom: 8px; color: var(--muted); font-size: 11.5px; pointer-events: none; }
     @media (max-width: 900px) { aside { width: 190px; } #search { width: 110px; } #hint, #status { display: none; } }
   </style>
 </head>
@@ -80,13 +73,10 @@
   <div id="layout">
     <aside>
       <div class="brand">
-        <!-- Giotto's "O": the perfect circle he drew freehand -->
-        <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="#e3a92b" stroke-width="2.6"/><circle cx="14" cy="14" r="4.5" fill="#d9534a"/></svg>
-        <b>Giotto</b>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        Giotto
       </div>
-      <div class="tagline">diagrams your agent draws</div>
       <nav id="list"></nav>
-      <div class="side-foot">Ask your agent to draw or change a diagram. It shows up here live.</div>
     </aside>
     <main>
       <header>
@@ -101,12 +91,7 @@
       <div id="stage">
         <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
         <textarea id="edit" rows="1"></textarea>
-        <div id="empty">
-          <div>
-            <svg width="64" height="64" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="#e3a92b" stroke-width="2"/><circle cx="14" cy="14" r="4.5" fill="#d9534a"/></svg>
-            <p>No diagrams yet. Ask your agent to draw something.</p>
-          </div>
-        </div>
+        <div id="empty">No diagrams yet. Ask your agent to draw something.</div>
         <div id="toast" hidden></div>
         <div id="hint">Drag a box to move it · drag empty space to copy that area for your agent · double-click to rename · [ ] send back / bring front · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
       </div>
@@ -152,7 +137,7 @@
       let out = doc ? drawContent(doc, S, { selected: [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, resolved: placed() }) : '';
       if (drag?.type === 'area') {
         const a = area(drag);
-        out += `<rect x="${a.x}" y="${a.y}" width="${a.w}" height="${a.h}" rx="4" fill="#e3a92b" fill-opacity="0.12" stroke="#e3a92b" stroke-width="${1.5 / view.zoom}" stroke-dasharray="${6 / view.zoom} ${4 / view.zoom}"/>`;
+        out += `<rect x="${a.x}" y="${a.y}" width="${a.w}" height="${a.h}" rx="3" fill="#2563eb" fill-opacity="0.06" stroke="#2563eb" stroke-width="${1.5 / view.zoom}" stroke-dasharray="${6 / view.zoom} ${4 / view.zoom}"/>`;
       }
       svg.innerHTML = out;
     }
@@ -240,7 +225,6 @@
       const s = (Date.now() - new Date(iso)) / 1000;
       return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : new Date(iso).toLocaleDateString();
     };
-    const hue = (id) => [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 
     let listKey = '';
     async function refreshList() {
@@ -252,8 +236,7 @@
       $('list').replaceChildren(...rows.map((d) => {
         const b = document.createElement('button');
         b.className = d.id === current ? 'on' : '';
-        b.innerHTML = '<span class="dot"></span><div><span class="t"></span><small></small></div>';
-        b.querySelector('.dot').style.background = `hsl(${hue(d.id)} 75% 62%)`;
+        b.innerHTML = '<span class="t"></span><small></small>';
         b.querySelector('.t').textContent = d.title;
         b.querySelector('small').textContent = d.when;
         b.onclick = () => open(d.id);
