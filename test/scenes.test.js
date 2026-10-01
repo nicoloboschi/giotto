@@ -19,13 +19,13 @@ const doc = {
   ] }],
 };
 
-test('timeline and frames: packets travel, content lands on arrival and stays', () => {
+test('timeline and frames: packets travel, content shows as the beat starts and stays', () => {
   const tl = timeline(doc);
   assert.equal(tl.total, 1500);
   const early = frameAt(doc, 0, 100, tl);
   assert.equal(early.active[0].edge, 'ab');
   assert.ok(early.active[0].p > 0 && early.active[0].p < 1);
-  assert.deepEqual(early.show, {}); // not arrived yet
+  assert.ok(early.show.b); // like interfig: content shows as the packet sets off
   const landed = frameAt(doc, 0, 1000 * TRAVEL + 1, tl);
   assert.ok(landed.show.b);
   assert.equal(landed.say, 'Stored.');
@@ -75,7 +75,7 @@ test('animated exports play one scene or all, at any speed', async () => {
 
 test('changes fade instead of popping', async () => {
   const { FADE } = await import('../lib/scenes.js');
-  const land = 1000 * TRAVEL; // beat 1 content lands when its packet arrives
+  const land = 0; // beat 1 content shows when the beat starts
   const half = frameAt(doc, 0, land + FADE / 2);
   assert.ok(half.fade.b.alpha > 0.4 && half.fade.b.alpha < 0.6);
   assert.equal(frameAt(doc, 0, land + FADE + 1).fade.b.alpha, 1);
