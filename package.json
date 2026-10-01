@@ -6,17 +6,13 @@
   "bin": {
     "giotto": "bin/giotto.js"
   },
-  "files": [
-    "bin",
-    "lib",
-    "public",
-    "skills"
-  ],
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
   "scripts": {
     "test": "node --test test/*.test.js"
-  }
+  },
+  "private": true,
+  "repository": "github:nicoloboschi/giotto"
 }

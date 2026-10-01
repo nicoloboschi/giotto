@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import { exec, spawn } from 'node:child_process';
+import { exec, execFileSync, spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { FORMAT, applyEdit, slugify, validId } from '../lib/edit.js';
@@ -27,6 +27,7 @@ if (opts.help) {
   console.log(`Usage:
   giotto          open the canvas (all diagrams, live as their files change)
   giotto mcp      MCP server (stdio) for Codex / Claude Code; starts the canvas if needed
+  giotto update   pull the latest Giotto (the running canvas switches over by itself)
 
 Options: --dir ~/.giotto (where diagrams live), --port 4321, --no-open`);
   process.exit(0);
@@ -34,6 +35,15 @@ Options: --dir ~/.giotto (where diagrams live), --port 4321, --no-open`);
 
 const self = fileURLToPath(import.meta.url);
 const root = path.join(path.dirname(self), '..');
+
+if (positionals[0] === 'update') {
+  try {
+    execFileSync('git', ['-C', root, 'pull', '--ff-only'], { stdio: 'inherit' });
+  } catch {
+    process.exit(1); // git already said why
+  }
+  process.exit(0);
+}
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
   .update(['bin/giotto.js', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
