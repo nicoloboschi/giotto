@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; font: 13px system-ui, sans-serif; }
+  #view svg { display: block; width: 100%; height: auto; max-height: 640px; }
+  #bar { display: flex; justify-content: space-between; align-items: center; padding: 6px 2px; color: #888; }
+  #bar button { font: inherit; background: none; border: 1px solid #8884; border-radius: 6px; padding: 3px 10px; color: inherit; cursor: pointer; }
+  #bar[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="bar" hidden><span id="title"></span><button id="open">Open in Giotto</button></div>
+<script>
+  // Giotto inside a chat (ChatGPT, Claude): an MCP Apps view. The server sends the drawn diagram
+  // in the tool result's _meta.giotto, as SVG in both themes; this page only shows it.
+  let diagram = null, dark = false, nextId = 1;
+  const pending = new Map();
+  const send = (msg) => parent.postMessage({ jsonrpc: '2.0', ...msg }, '*');
+  const request = (method, params) => new Promise((resolve) => {
+    const id = nextId++;
+    pending.set(id, resolve);
+    send({ id, method, params });
+  });
+  const setTheme = (ctx) => { if (ctx?.theme) dark = ctx.theme === 'dark'; };
+
+  function draw() {
+    if (!diagram) return;
+    document.getElementById('view').innerHTML = dark ? diagram.svgDark : diagram.svg;
+    document.getElementById('title').textContent = diagram.title;
+    document.getElementById('bar').hidden = false;
+    send({ method: 'ui/notifications/size-changed', params: { width: document.body.scrollWidth, height: document.body.scrollHeight } });
+  }
+
+  addEventListener('message', (e) => {
+    if (e.source !== parent) return;
+    const m = e.data || {};
+    if (m.id !== undefined && pending.has(m.id)) {
+      pending.get(m.id)(m.result);
+      pending.delete(m.id);
+    } else if (m.method === 'ui/notifications/tool-result') {
+      diagram = m.params?._meta?.giotto || diagram;
+      draw();
+    } else if (m.method === 'ui/notifications/host-context-changed') {
+      setTheme(m.params);
+      draw();
+    }
+  });
+  document.getElementById('open').onclick = () => diagram && request('ui/open-link', { url: diagram.url });
+
+  request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'giotto', version: '1' }, appCapabilities: {} }).then((r) => {
+    setTheme(r?.hostContext);
+    send({ method: 'ui/notifications/initialized' });
+    draw();
+  });
+</script>
+</body>
+</html>

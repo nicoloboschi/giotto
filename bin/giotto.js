@@ -2,7 +2,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import { watch, mkdirSync, readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -21,6 +21,7 @@ const { values: opts, positionals } = parseArgs({
   options: {
     dir: { type: 'string', default: process.env.GIOTTO_DIR || path.join(os.homedir(), '.giotto') },
     port: { type: 'string', default: process.env.GIOTTO_PORT || '4321' },
+    http: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
 });
@@ -29,6 +30,9 @@ if (opts.help) {
   console.log(`Usage:
   giotto          open the canvas (all diagrams, live as their files change)
   giotto mcp      MCP server (stdio) for Codex / Claude Code; starts the canvas if needed
+  giotto mcp --http 4322
+                  the same MCP server over HTTP, with diagrams drawn inside the chat (ChatGPT, Claude).
+                  Put a tunnel in front of it (e.g. ngrok http 4322) and add the printed URL as a connector.
   giotto update   pull the latest Giotto (the running canvas switches over by itself)
 
 Options: --dir ~/.giotto (where diagrams live), --port 4321`);
@@ -49,7 +53,7 @@ if (positionals[0] === 'update') {
 }
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
-  .update(['bin/giotto.js', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/history.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
+  .update(['bin/giotto.js', 'public/app.html', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/history.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
   .digest('hex')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
@@ -408,7 +412,7 @@ async function callTool(name, a = {}) {
   await ensureCanvas();
   if (name === 'list_diagrams') return JSON.stringify(await listDiagrams());
   if (name === 'create_diagram') {
-    const id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer', 'scenes', 'speed'].filter((k) => a[k]).map((k) => [k, a[k]])));
+    const id = (a.id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer', 'scenes', 'speed'].filter((k) => a[k]).map((k) => [k, a[k]]))));
     const doc = await readDoc(id);
     return report(`Created "${id}" (v${(await history.latest(id))?.v ?? 1}). Give the user this link: ${linkTo(id)}`, doc, doc.elements.map((e) => e.id));
   }
@@ -513,51 +517,116 @@ async function ensureCanvas() {
   spawn(process.execPath, [self, '--dir', dir, '--port', opts.port], { detached: true, stdio: 'ignore' }).unref();
   await waitFor(getInfo);
 }
+const HTTP_INSTRUCTIONS = `Giotto: diagrams drawn right here in the chat (create_diagram, get_diagram and edit_diagram show the diagram). One diagram per topic: list_diagrams first, create_diagram for something new, then small edit_diagram steps. Looks come from styles (list_styles, save_style, use_style), not from diagrams: give shapes a "tone" instead of hex colors.`;
 const INSTRUCTIONS = `Giotto: live diagrams the user watches at ${url} (Giotto never opens a browser: give the user the link). One diagram per topic: list_diagrams first, create_diagram for something new, then small edit_diagram steps. export_diagram writes SVG/PNG files. Looks come from styles (list_styles, save_style, use_style), not from diagrams: give shapes a "tone" instead of hex colors.`;
+
+// Chats that show apps (ChatGPT, Claude) draw these tools' results with the view in public/app.html.
+const VIEW = 'ui://giotto/diagram.html';
+const VIEW_TOOLS = ['create_diagram', 'edit_diagram', 'get_diagram', 'restore_version'];
+
+// The picture the view shows, in both themes. Sent in _meta: the view sees it, the model doesn't.
+async function viewOf(id) {
+  const doc = await readDoc(id);
+  const style = await getStyle(await currentStyle());
+  const draw = (dark) => (doc.scenes?.length ? toAnimatedSvg(forExport(doc), style, { dark }) : toSvg(doc, style, { dark }));
+  return { id, title: doc.title || id, url: linkTo(id), svg: draw(false), svgDark: draw(true) };
+}
+
+// One JSON-RPC message in, the answer out (null for notifications). Shared by stdio and HTTP.
+async function rpc(msg, http) {
+  const { id, method, params } = msg;
+  if (id === undefined) return null;
+  const ok = (result) => ({ jsonrpc: '2.0', id, result });
+  if (method === 'initialize') {
+    return ok({
+      protocolVersion: params?.protocolVersion || '2025-06-18',
+      capabilities: { tools: {}, resources: {} },
+      serverInfo: { name: 'giotto', version: '0.4.0' },
+      instructions: http ? HTTP_INSTRUCTIONS : INSTRUCTIONS,
+    });
+  }
+  if (method === 'tools/list') {
+    // Over HTTP the caller is remote, and export_diagram writes files anywhere on this machine: left out.
+    const tools = TOOLS.filter((t) => !http || t.name !== 'export_diagram');
+    return ok({ tools: tools.map((t) => (VIEW_TOOLS.includes(t.name) ? { ...t, _meta: { ui: { resourceUri: VIEW } } } : t)) });
+  }
+  if (method === 'tools/call') {
+    try {
+      if (http && params.name === 'export_diagram') throw new Error('export_diagram is not available over HTTP');
+      const a = params.arguments || {};
+      const out = await callTool(params.name, a);
+      const result = { content: Array.isArray(out) ? out : [{ type: 'text', text: out }] };
+      if (VIEW_TOOLS.includes(params.name)) result._meta = { giotto: await viewOf(a.id) };
+      return ok(result);
+    } catch (e) {
+      return ok({ content: [{ type: 'text', text: e.message }], isError: true });
+    }
+  }
+  if (method === 'resources/list') return ok({ resources: [{ uri: VIEW, name: 'Giotto diagram', mimeType: 'text/html;profile=mcp-app' }] });
+  if (method === 'resources/read') {
+    if (params?.uri !== VIEW) return { jsonrpc: '2.0', id, error: { code: -32602, message: `No resource ${params?.uri}` } };
+    const text = await fs.readFile(path.join(root, 'public', 'app.html'), 'utf8');
+    return ok({ contents: [{ uri: VIEW, mimeType: 'text/html;profile=mcp-app', text }] });
+  }
+  if (method === 'ping') return ok({});
+  return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } };
+}
 
 async function runMcp() {
   await ensureCanvas();
-  const reply = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+  const reply = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
   for await (const line of readline.createInterface({ input: process.stdin })) {
     if (!line.trim()) continue;
     let msg;
     try {
       msg = JSON.parse(line);
     } catch {
-      reply({ id: null, error: { code: -32700, message: 'Parse error' } });
+      reply({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
       continue;
     }
-    const { id, method, params } = msg;
-    if (id === undefined) continue; // notifications need no answer
-    if (method === 'initialize') {
-      reply({
-        id,
-        result: {
-          protocolVersion: params?.protocolVersion || '2025-06-18',
-          capabilities: { tools: {} },
-          serverInfo: { name: 'giotto', version: '0.4.0' },
-          instructions: INSTRUCTIONS,
-        },
-      });
-    } else if (method === 'tools/list') {
-      reply({ id, result: { tools: TOOLS } });
-    } else if (method === 'tools/call') {
-      try {
-        const out = await callTool(params.name, params.arguments);
-        reply({ id, result: { content: Array.isArray(out) ? out : [{ type: 'text', text: out }] } });
-      } catch (e) {
-        reply({ id, result: { content: [{ type: 'text', text: e.message }], isError: true } });
-      }
-    } else if (method === 'ping') {
-      reply({ id, result: {} });
-    } else {
-      reply({ id, error: { code: -32601, message: `Method not found: ${method}` } });
-    }
+    const out = await rpc(msg, false);
+    if (out) reply(out);
   }
 }
 
+// MCP over HTTP (stateless, plain JSON answers) for chats that run elsewhere and reach this machine through a tunnel.
+// Only /mcp/<secret> answers. The secret lives in <dir>/mcp-secret, so someone who finds the tunnel can't touch your diagrams.
+async function runMcpHttp(port) {
+  await ensureCanvas();
+  const secretFile = path.join(dir, 'mcp-secret');
+  let secret = (await fs.readFile(secretFile, 'utf8').catch(() => '')).trim();
+  if (!secret) {
+    secret = randomBytes(18).toString('base64url');
+    await fs.writeFile(secretFile, secret + '\n', { mode: 0o600 });
+  }
+  const server = http.createServer(async (req, res) => {
+    const send = (code, body) => {
+      res.writeHead(code, { 'content-type': 'application/json' });
+      res.end(body === undefined ? '' : JSON.stringify(body));
+    };
+    if (new URL(req.url, 'http://x').pathname !== `/mcp/${secret}`) return send(404, { error: 'not found' });
+    if (req.method !== 'POST') return send(405, { error: 'POST only' });
+    let b = '';
+    for await (const chunk of req) b += chunk;
+    let msg;
+    try {
+      msg = JSON.parse(b);
+    } catch {
+      return send(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+    }
+    const out = await rpc(msg, true);
+    out ? send(200, out) : send(202);
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  log(`Giotto MCP on http://localhost:${port}/mcp/${secret}
+Put a tunnel in front of it (e.g. ngrok http ${port}), then add https://<tunnel>/mcp/${secret} as a connector in ChatGPT or Claude.`);
+}
+
 if (positionals[0] === 'mcp') {
-  runMcp().catch((e) => {
+  (opts.http ? runMcpHttp(Number(opts.http)) : runMcp()).catch((e) => {
     log(e.message);
     process.exit(1);
   });

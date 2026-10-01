@@ -20,6 +20,7 @@ Then ask your agent for a diagram. The first time, it sets Giotto up for you and
 - Install: `curl -fsSL https://raw.githubusercontent.com/nicoloboschi/giotto/main/install.sh | bash`. It clones Giotto into `~/.giotto/app`, adds a `giotto` command, and connects Claude Code and Codex.
 - Update: `giotto update`. The running canvas switches to the new code by itself.
 - Other agents: point your MCP config at `node /path/to/giotto/bin/giotto.js mcp`.
+- ChatGPT / Claude.ai (diagram drawn inside the chat): run `giotto mcp --http 4322`, put a tunnel in front (`ngrok http 4322`), and add the printed `https://<tunnel>/mcp/<secret>` URL as a connector (ChatGPT: Settings → Apps → Developer mode). Diagrams still save to `~/.giotto`, so the local canvas updates too.
 
 </details>
 
