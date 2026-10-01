@@ -133,3 +133,19 @@ test('content blocks: markdown-lite, chips, chat, list, code; bad blocks are rep
   assert.match(w.join('\n'), /type "html" isn't drawn/);
   assert.match(w.join('\n'), /\(chat\) "who" isn't drawn/);
 });
+
+test('style and element values can never make the SVG invalid', async () => {
+  const { Resvg } = await import('@resvg/resvg-js');
+  const style = {
+    fontUrl: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono&display=swap',
+    fontFaces: '@font-face { font-family: "A&B"; src: url(data:font/woff2;base64,AA==); }',
+    css: '.g-label { font-family: "A&B"; } </style><script>x</script>',
+    radius: '12" onload="x', strokeWidth: '2&', fontSize: 'big',
+  };
+  const svg = toSvg({ elements: [{ id: 'a', type: 'rectangle', x: '10', y: 0, strokeWidth: '3"x', label: { text: 'A & B', fontSize: '1&' } }] }, style);
+  assert.doesNotMatch(svg, /&(?!amp;|lt;|gt;|quot;|#)/); // every & is escaped
+  assert.doesNotMatch(svg, /<script/);
+  assert.doesNotMatch(svg, /onload/);
+  assert.match(svg, /family=Inter:wght@400;700&amp;family=JetBrains\+Mono/);
+  new Resvg(svg).render(); // a strict XML parser accepts it
+});
