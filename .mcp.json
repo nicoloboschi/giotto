@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "giotto": { "command": "node", "args": ["bin/giotto.js", "mcp"] }
+  }
+}

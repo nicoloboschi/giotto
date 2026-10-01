@@ -1,0 +1,22 @@
+{
+  "name": "giotto",
+  "version": "0.1.0",
+  "description": "A live diagram canvas your coding agent edits through MCP",
+  "type": "module",
+  "bin": {
+    "giotto": "bin/giotto.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "public",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

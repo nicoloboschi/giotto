@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Giotto</title>
+  <style>
+    :root { --bg: #f7f7f8; --paper: #ffffff; --fg: #1e1e1e; --muted: #888; --line: #e4e4e7; --hover: #ececf1; --active: #e0dfff; }
+    html, body { margin: 0; height: 100%; font: 14px system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+    #layout { display: flex; height: 100%; }
+    aside { width: 250px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+    aside h1 { font-size: 15px; margin: 16px 16px 12px; }
+    #list { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+    #list button { display: block; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 8px 10px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+    #list button:hover { background: var(--hover); }
+    #list button.on { background: var(--active); }
+    #list small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    #list .t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+    #title { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit; font: 600 15px system-ui, sans-serif; padding: 4px; border-radius: 6px; }
+    #title:hover, #title:focus { background: var(--hover); outline: 0; }
+    #search { width: 180px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font: inherit; background: var(--paper); }
+    header button { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+    header button:hover { background: var(--hover); }
+    #status { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    #stage { flex: 1; position: relative; background: var(--paper); overflow: hidden; }
+    #canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: crosshair; }
+    #canvas.space { cursor: grab; }
+    #canvas [data-id] { cursor: move; }
+    #canvas.panning, #canvas.space.panning { cursor: grabbing; }
+    #edit { position: absolute; display: none; z-index: 2; resize: none; border: 1.5px solid #4c6ef5; border-radius: 6px; padding: 4px 6px;
+      font: 16px system-ui, sans-serif; text-align: center; background: #fff; outline: 0; }
+    #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+    #empty[hidden] { display: none; }
+    #gallery { position: absolute; right: 12px; top: 52px; z-index: 5; width: min(560px, calc(100% - 24px)); max-height: calc(100% - 70px); overflow-y: auto;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; padding: 12px;
+      background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+    #gallery[hidden] { display: none; }
+    #gallery button { border: 2px solid transparent; border-radius: 10px; padding: 6px; background: var(--bg); cursor: pointer; text-align: left; font: inherit; color: inherit; }
+    #gallery button:hover { border-color: var(--line); }
+    #gallery button.on { border-color: #4c6ef5; }
+    #gallery img { display: block; width: 100%; height: 90px; object-fit: contain; border-radius: 6px; margin-bottom: 6px; }
+    #gallery p { grid-column: 1 / -1; margin: 2px 4px; color: var(--muted); font-size: 12px; }
+    #gallery small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+    #toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 4; padding: 8px 14px; border-radius: 8px;
+      background: #1e1e1e; color: #fff; font-size: 13px; pointer-events: none; transition: opacity .2s; }
+    #toast[hidden] { display: block; opacity: 0; }
+    #hint { position: absolute; left: 12px; bottom: 10px; color: var(--muted); font-size: 12px; pointer-events: none; }
+    @media (max-width: 700px) { aside { width: 160px; } #search { width: 110px; } #hint { display: none; } }
+  </style>
+</head>
+<body>
+  <div id="layout">
+    <aside>
+      <h1>Giotto</h1>
+      <nav id="list"></nav>
+    </aside>
+    <main>
+      <header>
+        <input id="title" aria-label="Diagram title" />
+        <span id="status"></span>
+        <input id="search" type="search" placeholder="Search  ⌘F" aria-label="Search this diagram" />
+        <button id="style-btn" aria-haspopup="true">Style</button>
+        <button data-export="svg">Export SVG</button>
+        <button data-export="png">Export PNG</button>
+        <button data-export="json">Export JSON</button>
+      </header>
+      <div id="gallery" hidden></div>
+      <div id="stage">
+        <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+        <textarea id="edit" rows="1"></textarea>
+        <div id="empty">No diagrams yet. Ask your agent to draw something.</div>
+        <div id="toast" hidden></div>
+        <div id="hint">Drag a box to move it · drag empty space to copy that area for your agent · double-click to rename · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
+      </div>
+    </main>
+  </div>
+  <script type="module">
+    import { drawContent, toSvg, route, bounds, boundsOf, isShape, isRouted, labelOf, esc } from '/lib/render.js';
+    import { resolveStyle } from '/lib/styles.js';
+
+    const $ = (id) => document.getElementById(id);
+    const svg = $('canvas');
+    const status = (msg) => ($('status').textContent = msg);
+    const serialize = (d) => JSON.stringify(d, null, 2) + '\n';
+    const snap = (n) => Math.round(n / 10) * 10; // keeps hand-moved things lined up
+
+    // ---- state ----
+
+    let diagrams = [], current = null, doc = null, base = null;
+    let view = { x: 0, y: 0, zoom: 1 };
+    let selected = new Set(), matches = [], matchAt = 0;
+    let undo = [], drag = null, saveTimer, lastInput = 0, spaceDown = false;
+    let styles = {}, styleId = 'default', S = resolveStyle();
+    const el = (id) => doc?.elements.find((e) => e.id === id);
+
+    // ---- drawing ----
+
+    function render() {
+      const r = svg.getBoundingClientRect();
+      svg.setAttribute('viewBox', `${view.x} ${view.y} ${r.width / view.zoom} ${r.height / view.zoom}`);
+      svg.style.backgroundColor = S.background;
+      svg.style.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1px, transparent 1px)` : 'none';
+      svg.style.backgroundSize = `${20 * view.zoom}px ${20 * view.zoom}px`;
+      svg.style.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
+      let out = doc ? drawContent(doc, S, { selected: [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom }) : '';
+      if (drag?.type === 'area') {
+        const r = area(drag);
+        out += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="#4c6ef5" fill-opacity="0.08" stroke="#4c6ef5" stroke-width="${1 / view.zoom}"/>`;
+      }
+      svg.innerHTML = out;
+    }
+
+    function fit() {
+      const r = svg.getBoundingClientRect();
+      const b = boundsOf(route(doc?.elements || []), S);
+      if (!b.w && !b.h) return (view = { x: -40, y: -40, zoom: 1 });
+      const zoom = Math.min(1.5, (r.width - 80) / b.w, (r.height - 80) / b.h);
+      view = { zoom, x: b.x + b.w / 2 - r.width / zoom / 2, y: b.y + b.h / 2 - r.height / zoom / 2 };
+    }
+
+    function centerOn(id) {
+      const e = route(doc.elements).find((x) => x.id === id);
+      if (!e) return;
+      const r = svg.getBoundingClientRect(), b = bounds(e, S);
+      view.x = b.x + b.w / 2 - r.width / view.zoom / 2;
+      view.y = b.y + b.h / 2 - r.height / view.zoom / 2;
+    }
+
+    // ---- saving ----
+
+    // A finished change by the user: remember the old version for undo, then save.
+    function commit() {
+      const text = serialize(doc);
+      if (text === base) return;
+      undo.push(base);
+      save(text);
+      runSearch();
+    }
+
+    async function save(text) {
+      const prev = base;
+      base = text; // set before saving so the echo from the server is recognised as ours
+      const res = await fetch(`/api/doc?id=${current}`, { method: 'PUT', body: JSON.stringify({ base: prev, text }) });
+      // 409: someone else changed the file first; their version is already on its way to us.
+      if (!res.ok && base === text) base = prev;
+    }
+
+    // Selection is saved too (the agent reads it), but isn't worth an undo step.
+    function selectionChanged() {
+      doc.selectedIds = [...selected];
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => save(serialize(doc)), 300);
+    }
+
+    // A new version of the file arrived (from the agent, or another tab).
+    function show(text) {
+      if (text === base) return; // our own save coming back
+      if (base !== null) undo.push(base);
+      base = text;
+      doc = JSON.parse(text);
+      doc.elements ||= [];
+      selected = new Set([...selected].filter(el));
+      if (document.activeElement !== $('title')) $('title').value = doc.title || current;
+      if (drag?.type === 'move') drag = null; // what we were dragging may have changed under us
+      runSearch();
+      status(`updated ${new Date().toLocaleTimeString()}`);
+      render();
+    }
+
+    async function open(id) {
+      if (!id || id === current) return;
+      const res = await fetch(`/api/doc?id=${id}`);
+      if (!res.ok) return;
+      current = id;
+      base = null;
+      undo = [];
+      selected = new Set();
+      history.replaceState(null, '', `#${id}`);
+      show(await res.text());
+      selected = new Set(doc.selectedIds || []);
+      fit();
+      render();
+      refreshList();
+    }
+
+    // ---- sidebar ----
+
+    const ago = (iso) => {
+      const s = (Date.now() - new Date(iso)) / 1000;
+      return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : new Date(iso).toLocaleDateString();
+    };
+
+    async function refreshList() {
+      diagrams = await (await fetch('/api/diagrams')).json();
+      $('list').replaceChildren(...diagrams.map((d) => {
+        const b = document.createElement('button');
+        b.className = d.id === current ? 'on' : '';
+        b.innerHTML = '<span class="t"></span><small></small>';
+        b.querySelector('.t').textContent = d.title;
+        b.querySelector('small').textContent = `${ago(d.updated)} · ${d.elements} shapes`;
+        b.onclick = () => open(d.id);
+        return b;
+      }));
+      $('empty').hidden = diagrams.length > 0;
+    }
+
+    $('title').addEventListener('change', () => {
+      doc.title = $('title').value.trim() || current;
+      commit();
+      refreshList();
+    });
+    $('title').addEventListener('keydown', (e) => e.key === 'Enter' && e.target.blur());
+
+    // ---- mouse: select, move, resize, pan, zoom ----
+
+    const toWorld = (ev) => {
+      const r = svg.getBoundingClientRect();
+      return { x: view.x + (ev.clientX - r.left) / view.zoom, y: view.y + (ev.clientY - r.top) / view.zoom };
+    };
+    // Arrows tied to shapes follow them, so only free-standing things move on their own.
+    const movable = (e) => e && !isRouted(e);
+
+    let lastDown = {};
+    svg.addEventListener('pointerdown', (ev) => {
+      if (!doc || ev.button > 1) return;
+      // Middle button or Space + drag pans, wherever you grab.
+      if (ev.button === 1 || spaceDown) {
+        ev.preventDefault();
+        drag = { type: 'pan', sx: ev.clientX, sy: ev.clientY, x: view.x, y: view.y };
+        svg.classList.add('panning');
+        return svg.setPointerCapture(ev.pointerId);
+      }
+      $('edit').blur();
+      const p = toWorld(ev);
+      const id = ev.target.closest('[data-id]')?.dataset.id;
+      // Every click redraws the canvas, so the browser's own dblclick never fires: count clicks here.
+      const now = Date.now();
+      if (id && lastDown.id === id && now - lastDown.at < 400) {
+        lastDown = {};
+        return startEdit(id);
+      }
+      lastDown = { id, at: now };
+      if (ev.target.closest('[data-handle]')) {
+        const e = el([...selected][0]);
+        drag = { type: 'resize', id: e.id, start: p, w: e.width ?? 140, h: e.height ?? 60 };
+      } else if (id) {
+        if (ev.shiftKey) selected.has(id) ? selected.delete(id) : selected.add(id);
+        else if (!selected.has(id)) selected = new Set([id]);
+        const orig = new Map([...selected].map(el).filter(movable).map((e) => [e.id, { x: e.x, y: e.y }]));
+        drag = { type: 'move', start: p, orig };
+        selectionChanged();
+      } else {
+        if (!ev.shiftKey && selected.size) {
+          selected.clear();
+          selectionChanged();
+        }
+        drag = { type: 'area', start: p, end: p };
+      }
+      svg.setPointerCapture(ev.pointerId);
+      render();
+    });
+
+    svg.addEventListener('pointermove', (ev) => {
+      if (!drag) return;
+      const p = toWorld(ev);
+      if (drag.type === 'pan') {
+        view.x = drag.x - (ev.clientX - drag.sx) / view.zoom;
+        view.y = drag.y - (ev.clientY - drag.sy) / view.zoom;
+      } else if (drag.type === 'move') {
+        for (const [id, o] of drag.orig) {
+          const e = el(id);
+          if (e) Object.assign(e, { x: snap(o.x + p.x - drag.start.x), y: snap(o.y + p.y - drag.start.y) });
+        }
+      } else if (drag.type === 'area') {
+        drag.end = p;
+      } else if (drag.type === 'resize') {
+        const e = el(drag.id);
+        if (e) Object.assign(e, { width: Math.max(40, snap(drag.w + p.x - drag.start.x)), height: Math.max(30, snap(drag.h + p.y - drag.start.y)) });
+      }
+      render();
+    });
+
+    const endDrag = () => {
+      if (drag?.type === 'area') copyArea(area(drag));
+      else if (drag && drag.type !== 'pan') commit();
+      drag = null;
+      svg.classList.remove('panning');
+    };
+    svg.addEventListener('pointerup', endDrag);
+    svg.addEventListener('pointercancel', endDrag);
+
+    svg.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      if (ev.ctrlKey || ev.metaKey) {
+        const p = toWorld(ev);
+        const zoom = Math.min(4, Math.max(0.1, view.zoom * Math.exp(-ev.deltaY * 0.01)));
+        view.x = p.x - (p.x - view.x) * (view.zoom / zoom);
+        view.y = p.y - (p.y - view.y) * (view.zoom / zoom);
+        view.zoom = zoom;
+      } else {
+        view.x += ev.deltaX / view.zoom;
+        view.y += ev.deltaY / view.zoom;
+      }
+      render();
+    }, { passive: false });
+
+    new ResizeObserver(render).observe(svg);
+    for (const ev of ['pointerdown', 'keydown', 'wheel']) document.addEventListener(ev, () => (lastInput = Date.now()), true);
+
+    // ---- area select: copies a description the user can paste to the agent ----
+
+    const area = (d) => ({ x: Math.min(d.start.x, d.end.x), y: Math.min(d.start.y, d.end.y), w: Math.abs(d.end.x - d.start.x), h: Math.abs(d.end.y - d.start.y) });
+
+    function describeArea(r, items) {
+      const n = Math.round;
+      const lines = [`Giotto diagram "${doc.title || current}" (id: ${current}), area x ${n(r.x)}..${n(r.x + r.w)}, y ${n(r.y)}..${n(r.y + r.h)}:`];
+      if (!items.length) lines.push('- empty space');
+      for (const e of items) {
+        const what = `- ${e.type}${labelOf(e) ? ` "${labelOf(e).replace(/\n/g, ' ')}"` : ''} (id: ${e.id})`;
+        if (isRouted(e)) lines.push(`${what} from ${e.start.id} to ${e.end.id}`);
+        else {
+          const b = bounds(e, S);
+          lines.push(`${what} at x ${n(b.x)}, y ${n(b.y)}, size ${n(b.w)}×${n(b.h)}`);
+        }
+      }
+      return lines.join('\n');
+    }
+
+    async function copyArea(r) {
+      if (r.w * view.zoom < 5 && r.h * view.zoom < 5) return; // just a click on empty space
+      const inside = route(doc.elements).filter((e) => {
+        const b = bounds(e, S);
+        return b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h;
+      });
+      selected = new Set(inside.map((e) => e.id));
+      selectionChanged();
+      render();
+      try {
+        await navigator.clipboard.writeText(describeArea(r, inside));
+        toast(inside.length ? `Copied ${inside.length} element${inside.length > 1 ? 's' : ''} for your agent. Paste it in your chat.` : 'Copied this empty area for your agent.');
+      } catch {
+        toast('Could not copy to the clipboard');
+      }
+    }
+
+    let toastTimer;
+    function toast(msg) {
+      $('toast').textContent = msg;
+      $('toast').hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => ($('toast').hidden = true), 2500);
+    }
+
+    // ---- double-click: rename ----
+
+    let editing = null;
+    function startEdit(id) {
+      const e = route(doc.elements).find((x) => x.id === id);
+      if (!e || e.type === 'freedraw') return;
+      const b = bounds(e, S), r = svg.getBoundingClientRect(), s = $('stage').getBoundingClientRect();
+      const w = Math.max(140, b.w * view.zoom);
+      const box = $('edit');
+      Object.assign(box.style, {
+        display: 'block', width: `${w}px`,
+        left: `${r.left - s.left + (b.x + b.w / 2 - view.x) * view.zoom - w / 2}px`,
+        top: `${r.top - s.top + (b.y + b.h / 2 - view.y) * view.zoom - 18}px`,
+        textAlign: e.type === 'text' ? 'left' : 'center',
+        fontFamily: S.font,
+      });
+      box.value = labelOf(e);
+      editing = id;
+      // Focus after this click is fully handled, or the click's own blur closes the box again.
+      setTimeout(() => { box.focus(); box.select(); });
+    }
+
+    function finishEdit(keep) {
+      if (!editing) return;
+      const e = el(editing), text = $('edit').value.trim();
+      editing = null;
+      $('edit').style.display = 'none';
+      if (!keep || !e) return;
+      if (e.type === 'text') { if (text) e.text = text; }
+      else if (text) e.label = { ...e.label, text };
+      else delete e.label;
+      commit();
+      render();
+    }
+    $('edit').addEventListener('blur', () => finishEdit(true));
+    $('edit').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); finishEdit(true); }
+      if (ev.key === 'Escape') finishEdit(false);
+    });
+
+    // ---- search ----
+
+    function runSearch() {
+      const q = $('search').value.trim().toLowerCase();
+      matches = q && doc ? doc.elements.filter((e) => labelOf(e).toLowerCase().includes(q)).map((e) => e.id) : [];
+      matchAt = Math.min(matchAt, Math.max(0, matches.length - 1));
+      if (q) status(matches.length ? `${matchAt + 1} of ${matches.length}` : 'no matches');
+    }
+    $('search').addEventListener('input', () => {
+      matchAt = 0;
+      runSearch();
+      if (matches.length) centerOn(matches[0]);
+      render();
+    });
+    $('search').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && matches.length) {
+        matchAt = (matchAt + (ev.shiftKey ? matches.length - 1 : 1)) % matches.length;
+        runSearch();
+        centerOn(matches[matchAt]);
+        render();
+      }
+      if (ev.key === 'Escape') {
+        $('search').value = '';
+        runSearch();
+        render();
+        $('search').blur();
+      }
+    });
+
+    // ---- keyboard ----
+
+    document.addEventListener('keyup', (ev) => {
+      if (ev.key === ' ') svg.classList.toggle('space', (spaceDown = false));
+    });
+    document.addEventListener('keydown', (ev) => {
+      const typing = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+      if (!typing && ev.key === ' ') {
+        ev.preventDefault();
+        svg.classList.toggle('space', (spaceDown = true));
+      }
+      if (ev.key === 'Escape') $('gallery').hidden = true;
+      const mod = ev.metaKey || ev.ctrlKey;
+      if (mod && ev.key === 'f') {
+        ev.preventDefault();
+        $('search').focus();
+        $('search').select();
+      } else if (!typing && mod && ev.key === 'z' && undo.length) {
+        ev.preventDefault();
+        const text = undo.pop();
+        doc = JSON.parse(text);
+        save(text);
+        render();
+      } else if (!typing && ev.key === 'Escape' && selected.size) {
+        selected.clear();
+        selectionChanged();
+        render();
+      }
+    });
+
+    // ---- export ----
+
+    async function toPng(d, style = S) {
+      const img = new Image();
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(toSvg(d, style));
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width * 2;
+      c.height = img.height * 2;
+      const ctx = c.getContext('2d');
+      ctx.scale(2, 2);
+      ctx.drawImage(img, 0, 0);
+      return new Promise((r) => c.toBlob(r, 'image/png'));
+    }
+
+    function download(name, data, type) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    document.querySelectorAll('[data-export]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!doc) return;
+      const f = btn.dataset.export;
+      if (f === 'svg') download(`${current}.svg`, toSvg(doc, S), 'image/svg+xml');
+      if (f === 'png') download(`${current}.png`, await toPng(doc));
+      if (f === 'json') download(`${current}.json`, base, 'application/json');
+    }));
+
+    // ---- styles: how every diagram looks; one is active at a time ----
+
+    const SAMPLE = { elements: [
+      { id: 'a', type: 'rectangle', x: 0, y: 0, width: 140, height: 60, tone: 'blue', label: { text: 'Sample' } },
+      { id: 'b', type: 'ellipse', x: 220, y: 0, width: 140, height: 60, tone: 'green', label: { text: 'Style' } },
+      { id: 'ab', type: 'arrow', x: 0, y: 0, start: { id: 'a' }, end: { id: 'b' } },
+    ] };
+
+    async function loadStyles() {
+      ({ styles, current: styleId } = await (await fetch('/api/styles')).json());
+      applyStyle(styleId);
+    }
+
+    function applyStyle(id) {
+      styleId = id;
+      S = resolveStyle(styles[id]);
+      $('style-btn').textContent = `Style: ${S.name || id} ▾`;
+      render();
+      if (!$('gallery').hidden) showGallery();
+    }
+
+    function showGallery() {
+      const preview = doc?.elements.length ? doc : SAMPLE;
+      const cards = Object.entries(styles).map(([id, st]) => {
+        const s = resolveStyle(st);
+        const b = document.createElement('button');
+        b.className = id === styleId ? 'on' : '';
+        // Previews are images, so each style's own CSS stays inside its preview.
+        b.innerHTML = `<img alt="" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(toSvg(preview, s))}"><strong>${esc(s.name || id)}</strong><small>${esc(s.description || '')}</small>`;
+        b.onclick = () => {
+          applyStyle(id); // instant here; the server tells other tabs
+          fetch('/api/style', { method: 'PUT', body: JSON.stringify({ id }) });
+        };
+        return b;
+      });
+      const tip = document.createElement('p');
+      tip.textContent = 'Want another look? Ask your agent to make a style, or to change this one.';
+      $('gallery').replaceChildren(...cards, tip);
+      $('gallery').hidden = false;
+    }
+
+    $('style-btn').onclick = (ev) => {
+      ev.stopPropagation();
+      $('gallery').hidden ? showGallery() : ($('gallery').hidden = true);
+    };
+    document.addEventListener('pointerdown', (ev) => {
+      if (!ev.target.closest('#gallery, #style-btn')) $('gallery').hidden = true;
+    });
+
+    // ---- start, and live updates from the server ----
+
+    await loadStyles();
+
+    await refreshList();
+    const wanted = location.hash.slice(1);
+    await open(diagrams.some((d) => d.id === wanted) ? wanted : diagrams[0]?.id);
+
+    let version;
+    const events = new EventSource('/api/events');
+    events.onmessage = async (ev) => {
+      const msg = JSON.parse(ev.data);
+      // The canvas server was replaced by newer code: load the matching page.
+      if (msg.type === 'hello') (version ??= msg.version) !== msg.version && location.reload();
+      if (msg.type === 'styles') loadStyles();
+      if (msg.type === 'doc') {
+        if (msg.id === current) show(msg.text);
+        // The agent is working on another diagram: follow it, unless the user is busy here.
+        else if (Date.now() - lastInput > 5000) await open(msg.id);
+        refreshList();
+      }
+      if (msg.type === 'export') {
+        let data, error;
+        try {
+          const style = resolveStyle(msg.style);
+          const blob = await toPng(JSON.parse(await (await fetch(`/api/doc?id=${msg.id}`)).text()), style);
+          data = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result.split(',')[1]); f.readAsDataURL(blob); });
+        } catch (e) {
+          error = e.message;
+        }
+        fetch('/api/export-result', { method: 'POST', body: JSON.stringify({ reqId: msg.reqId, data, error }) });
+      }
+    };
+    events.onerror = () => status('canvas server stopped, retrying…');
+    events.onopen = () => refreshList();
+  </script>
+</body>
+</html>
