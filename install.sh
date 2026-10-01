@@ -37,6 +37,7 @@ SERVER="$APP/bin/giotto.js"
 # Link the skill unless one is already there (e.g. from `npx skills add nicoloboschi/giotto`).
 add_skill() {
   mkdir -p "$1"
+  [ -e "$HOME/.agents/skills/giotto" ] && return # `npx skills` already shares it with every agent
   if [ -e "$1/giotto" ] || [ -L "$1/giotto" ]; then return; fi
   ln -s "$APP/skills/giotto" "$1/giotto"
 }
