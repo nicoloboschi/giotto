@@ -33,7 +33,7 @@ npx skills add nicoloboschi/giotto
 curl -fsSL https://raw.githubusercontent.com/nicoloboschi/giotto/main/install.sh | bash
 ```
 
-**3. Restart your agent session** so it loads the Giotto tools, and ask again. The canvas opens at http://localhost:4321.
+**3. Restart your agent session** so it loads the Giotto tools, and ask again. The agent gives you a link to the diagram on the canvas at http://localhost:4321.
 
 You can also run the installer yourself first. It:
 
@@ -63,8 +63,8 @@ You can also run the installer yourself first. It:
 - **Always up to date.** The canvas keeps running in the background after the agent quits. Before every tool call, the MCP server checks the canvas is running the same code. If not, it replaces it, and open tabs reload by themselves.
 - **Files:** diagrams in `~/.giotto/<id>.json`, agent styles in `~/.giotto/styles/<id>.json`, the active style's id in `~/.giotto/styles/current`. Change the folder with `--dir` or `GIOTTO_DIR`.
 - **Ports:** one canvas per port (default 4321, change with `--port` or `GIOTTO_PORT`). Two different folders need two different ports.
-- **PNG export** from the agent uses an open canvas tab to turn the drawing into pixels, and opens one if needed. SVG export doesn't need a browser.
-- **Canvas only:** `giotto` opens the canvas without an agent.
+- **PNG export** from the agent uses an open canvas tab to turn the drawing into pixels. SVG export doesn't need a browser. Giotto never opens a browser by itself; the agent gives you the link.
+- **Canvas only:** `giotto` starts the canvas without an agent and prints its address.
 
 ## Develop
 

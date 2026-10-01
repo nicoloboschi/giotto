@@ -5,7 +5,7 @@ description: Draw and update diagrams the user watches live in the Giotto canvas
 
 # Giotto
 
-The user has a canvas open at http://localhost:4321. It shows every diagram in a sidebar and redraws live as you edit. The user can move and resize shapes and rename labels by hand, so always read before you change.
+Giotto's canvas runs at http://localhost:4321. It shows every diagram in a sidebar and redraws live as you edit. Giotto never opens a browser itself: **after you create or change a diagram, give the user its link** (tool results include it, like `http://localhost:4321/#<id>`). The user can move and resize shapes and rename labels by hand, so always read before you change.
 
 ## First time: install Giotto
 
@@ -23,7 +23,7 @@ It needs git and Node.js 20+. It clones Giotto into `~/.giotto/app`, adds a `gio
 - `create_diagram(title, elements?)`: a new diagram. **New topic = new diagram.** Only edit an existing one when the user means that one.
 - `get_diagram(id)`: elements plus `selectedIds`. If the user says "this" or "these", they mean the selected shapes.
 - `edit_diagram(id, add?, update?, remove?, title?)`: small changes. `update` takes partial elements by id; only the given fields change. Removing a shape also removes its arrows.
-- `export_diagram(id, format: svg|png, path?, style?)`: writes an image file and returns its path. Uses the active style unless you pass one.
+- `export_diagram(id, format: svg|png, path?, style?)`: writes an image file and returns its path. Uses the active style unless you pass one. PNG needs the canvas open in a browser; if it isn't, ask the user to open the link (or export SVG).
 
 There is no delete. Never try to remove a whole diagram.
 

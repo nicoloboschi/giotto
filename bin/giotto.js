@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import { exec, execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { FORMAT, applyEdit, slugify, validId } from '../lib/edit.js';
@@ -18,7 +18,6 @@ const { values: opts, positionals } = parseArgs({
   options: {
     dir: { type: 'string', default: process.env.GIOTTO_DIR || path.join(os.homedir(), '.giotto') },
     port: { type: 'string', default: process.env.GIOTTO_PORT || '4321' },
-    'no-open': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h' },
   },
 });
@@ -29,7 +28,7 @@ if (opts.help) {
   giotto mcp      MCP server (stdio) for Codex / Claude Code; starts the canvas if needed
   giotto update   pull the latest Giotto (the running canvas switches over by itself)
 
-Options: --dir ~/.giotto (where diagrams live), --port 4321, --no-open`);
+Options: --dir ~/.giotto (where diagrams live), --port 4321`);
   process.exit(0);
 }
 
@@ -53,11 +52,6 @@ const dir = path.resolve(opts.dir);
 mkdirSync(dir, { recursive: true });
 const url = `http://localhost:${opts.port}`;
 const log = (...a) => console.error(...a); // stdout belongs to MCP in mcp mode
-
-const openBrowser = (target = url) => {
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start ""' : 'xdg-open';
-  exec(`${cmd} ${target}`);
-};
 
 // ---------- diagram files: <dir>/<id>.json = { title, elements, selectedIds } ----------
 
@@ -163,11 +157,8 @@ function serve() {
 
   // PNG needs a real browser to turn the SVG into pixels; SVG is made in Node (see callTool).
   async function exportViaBrowser(id, format, style) {
-    if (!clients.size) {
-      openBrowser();
-      for (let i = 0; i < 40 && !clients.size; i++) await new Promise((r) => setTimeout(r, 500));
-      if (!clients.size) throw new Error(`Exporting needs the canvas open in a browser: ${url}`);
-    }
+    // Giotto never opens a browser itself: the agent gives the user the link.
+    if (!clients.size) throw new Error(`PNG export needs the canvas open in a browser. Ask the user to open ${url} and retry, or export SVG.`);
     await readDoc(id); // fail fast on unknown ids
     const reqId = nextExport++;
     const result = new Promise((resolve, reject) => {
@@ -337,14 +328,14 @@ async function callTool(name, a = {}) {
   if (name === 'list_diagrams') return JSON.stringify(await listDiagrams());
   if (name === 'create_diagram') {
     const id = await createDiagram(a.title, a.elements);
-    return `Created "${id}". User sees it at ${linkTo(id)}`;
+    return `Created "${id}". Give the user this link: ${linkTo(id)}`;
   }
   if (name === 'get_diagram') return JSON.stringify({ id: a.id, url: linkTo(a.id), ...(await readDoc(a.id)) });
   if (name === 'edit_diagram') {
     const doc = applyEdit(await readDoc(a.id), a);
     if (a.title) doc.title = a.title;
     await writeDoc(a.id, doc);
-    return `Done. ${doc.elements.length} elements. User sees it at ${linkTo(a.id)}`;
+    return `Done. ${doc.elements.length} elements. Give the user this link: ${linkTo(a.id)}`;
   }
   if (name === 'export_diagram') {
     const format = a.format || 'svg';
@@ -375,7 +366,7 @@ async function callTool(name, a = {}) {
   }
   if (name === 'use_style') {
     await useStyle(a.id);
-    return `Style "${a.id}" is active. The user sees it at ${url}`;
+    return `Style "${a.id}" is active. Give the user this link: ${url}`;
   }
   throw new Error(`Unknown tool ${name}`);
 }
@@ -400,10 +391,10 @@ async function ensureCanvas() {
     process.kill(info.pid);
     await waitFor(async () => !(await getInfo()));
   }
-  spawn(process.execPath, [self, '--dir', dir, '--port', opts.port, ...(info ? ['--no-open'] : [])], { detached: true, stdio: 'ignore' }).unref();
+  spawn(process.execPath, [self, '--dir', dir, '--port', opts.port], { detached: true, stdio: 'ignore' }).unref();
   await waitFor(getInfo);
 }
-const INSTRUCTIONS = `Giotto: live diagrams the user watches at ${url}. One diagram per topic: list_diagrams first, create_diagram for something new, then small edit_diagram steps. export_diagram writes SVG/PNG files. Looks come from styles (list_styles, save_style, use_style), not from diagrams: give shapes a "tone" instead of hex colors.`;
+const INSTRUCTIONS = `Giotto: live diagrams the user watches at ${url} (Giotto never opens a browser: give the user the link). One diagram per topic: list_diagrams first, create_diagram for something new, then small edit_diagram steps. export_diagram writes SVG/PNG files. Looks come from styles (list_styles, save_style, use_style), not from diagrams: give shapes a "tone" instead of hex colors.`;
 
 async function runMcp() {
   await ensureCanvas();
@@ -454,7 +445,6 @@ if (positionals[0] === 'mcp') {
   serve().then(
     () => {
       log(`Giotto on ${url}  (diagrams in ${dir})`);
-      if (!opts['no-open']) openBrowser();
     },
     (e) => {
       log(e.code === 'EADDRINUSE' ? `Port ${opts.port} is busy. Is giotto already running? Try --port.` : e.message);

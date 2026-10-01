@@ -61,5 +61,5 @@ case ":$PATH:" in
   *) echo "Add $BIN to your PATH to use the giotto command." ;;
 esac
 
-say "Done. Ask your agent to draw something; the canvas opens at http://localhost:4321"
+say "Done. Ask your agent to draw something; it will give you a link to the canvas (http://localhost:4321)."
 echo "Update later with: giotto update"
