@@ -11,6 +11,8 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, validId } from '../lib/edit.js';
 import { toSvg, layoutWarnings, SAMPLE } from '../lib/render.js';
+import { timeline, frameAt, sceneWarnings } from '../lib/scenes.js';
+import { toAnimatedSvg } from '../lib/animate.js';
 import { DEFAULT_STYLE, STYLE_FORMAT, resolveStyle, styleWarnings } from '../lib/styles.js';
 
 const { values: opts, positionals } = parseArgs({
@@ -46,7 +48,7 @@ if (positionals[0] === 'update') {
 }
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
-  .update(['bin/giotto.js', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
+  .update(['bin/giotto.js', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
   .digest('hex')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
@@ -172,7 +174,7 @@ function serve() {
       if (route === 'GET /') {
         return send(200, await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8'), 'text/html; charset=utf-8');
       }
-      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js', 'GET /lib/blocks.js'].includes(route)) {
+      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js', 'GET /lib/blocks.js', 'GET /lib/scenes.js'].includes(route)) {
         return send(200, await fs.readFile(path.join(root, pathname), 'utf8'), 'text/javascript');
       }
       if (route === 'GET /api/styles') return send(200, { current: await currentStyle(), styles: await listStyles() });
@@ -238,7 +240,7 @@ const TOOLS = [
   {
     name: 'create_diagram',
     description: `Create a new diagram. Use this for any new topic instead of reusing an unrelated diagram. Optionally pass the first elements. ${FORMAT}`,
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, subtitle: { type: 'string' }, footer: { type: 'string' }, elements: elementsArg, legend: { type: 'object' } }, required: ['title'] },
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, subtitle: { type: 'string' }, footer: { type: 'string' }, elements: elementsArg, legend: { type: 'object' }, scenes: { type: 'array', items: { type: 'object' } }, speed: { type: 'number' } }, required: ['title'] },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
   {
@@ -256,22 +258,29 @@ const TOOLS = [
 - title: rename the diagram
 - legend: what each tone means, drawn below the diagram (null removes it)
 - subtitle / footer: text for the export header and footer, when the style shows them (null removes)
+- scenes / speed: the diagram's stories, replaced as a whole (see SCENES below; null removes)
 The user sees the change live. ${FORMAT}`,
     inputSchema: {
       type: 'object',
-      properties: { ...idArg, title: { type: 'string' }, subtitle: { type: ['string', 'null'] }, footer: { type: ['string', 'null'] }, add: elementsArg, update: elementsArg, remove: { type: 'array', items: { type: 'string' } }, legend: { type: ['object', 'null'] } },
+      properties: { ...idArg, title: { type: 'string' }, subtitle: { type: ['string', 'null'] }, footer: { type: ['string', 'null'] }, scenes: { type: ['array', 'null'], items: { type: 'object' } }, speed: { type: ['number', 'null'] }, add: elementsArg, update: elementsArg, remove: { type: 'array', items: { type: 'string' } }, legend: { type: ['object', 'null'] } },
       required: ['id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
   {
     name: 'export_diagram',
-    description: `Write a diagram as an image file and return the path. Also the way to preview a style before saving or switching to it: pass the style itself as an object (and leave out id to draw a sample diagram), then look at the PNG. PNG is drawn from the same SVG, so they always match. Either way the rendered picture comes back in the result.`,
+    description: `Write a diagram as a file and return the path, with a picture attached so you can check it.
+- svg / png: the still diagram. With "scene" (and "beat"), one moment of a scene instead: the end of that beat, with what it shows, lights and narrates.
+- animated-svg: every scene playing in a loop, in one self-contained SVG (plays in GitHub READMEs, PRs, docs).
+- mp4: the same as a video (needs ffmpeg; takes a little while).
+Also the way to preview a style before saving or switching to it: pass the style itself as an object (and leave out id to draw a sample diagram), then look at the picture.`,
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Diagram id. Leave out to draw a sample diagram (for style previews).' },
-        format: { type: 'string', enum: ['svg', 'png'], default: 'svg' },
+        format: { type: 'string', enum: ['svg', 'png', 'animated-svg', 'mp4'], default: 'svg' },
+        scene: { description: 'For a still of one moment: the scene, by number (1 = first) or label.', anyOf: [{ type: 'number' }, { type: 'string' }] },
+        beat: { type: 'number', description: 'With scene: which beat (1 = first; default the last).' },
         path: { type: 'string', description: 'Where to write it. Default: ./<id>.<format> in the current directory.' },
         style: { description: 'A style id, or a full style object to preview without saving it. Default: the active style.', anyOf: [{ type: 'string' }, { type: 'object' }] },
         dark: { type: 'boolean', description: "Use the style's dark version." },
@@ -325,7 +334,7 @@ async function report(intro, doc, ids) {
   const touched = doc.elements.filter((e) => ids.includes(e.id));
   const active = await currentStyle();
   const style = await getStyle(active);
-  const warnings = [...elementWarnings(touched, Object.keys(resolveStyle(style).tones), active), ...layoutWarnings(doc, style, ids)];
+  const warnings = [...elementWarnings(touched, Object.keys(resolveStyle(style).tones), active), ...layoutWarnings(doc, style, ids), ...sceneWarnings(doc)];
   return [intro, warnings.length ? `Warnings:\n- ${warnings.join('\n- ')}` : 'No warnings.', `Stored:\n${JSON.stringify(touched)}`].join('\n\n');
 }
 
@@ -333,7 +342,7 @@ async function callTool(name, a = {}) {
   await ensureCanvas();
   if (name === 'list_diagrams') return JSON.stringify(await listDiagrams());
   if (name === 'create_diagram') {
-    const id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer'].filter((k) => a[k]).map((k) => [k, a[k]])));
+    const id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer', 'scenes', 'speed'].filter((k) => a[k]).map((k) => [k, a[k]])));
     const doc = await readDoc(id);
     return report(`Created "${id}". Give the user this link: ${linkTo(id)}`, doc, doc.elements.map((e) => e.id));
   }
@@ -341,7 +350,7 @@ async function callTool(name, a = {}) {
   if (name === 'edit_diagram') {
     const doc = applyEdit(await readDoc(a.id), a);
     if (a.title) doc.title = a.title;
-    for (const k of ['subtitle', 'footer']) if (k in a) a[k] === null ? delete doc[k] : (doc[k] = a[k]);
+    for (const k of ['subtitle', 'footer', 'scenes', 'speed']) if (k in a) a[k] === null ? delete doc[k] : (doc[k] = a[k]);
     await writeDoc(a.id, doc);
     const ids = [...(a.add || []), ...(a.update || [])].map((e) => e.id);
     if (a.legend !== undefined) ids.push('_legend');
@@ -349,16 +358,34 @@ async function callTool(name, a = {}) {
   }
   if (name === 'export_diagram') {
     const format = a.format || 'svg';
-    if (!['svg', 'png'].includes(format)) throw new Error('format must be svg or png');
+    if (!['svg', 'png', 'animated-svg', 'mp4'].includes(format)) throw new Error('format must be svg, png, animated-svg or mp4');
     const doc = a.id ? await readDoc(a.id) : SAMPLE;
     const styleName = typeof a.style === 'string' ? a.style : a.style ? 'preview' : await currentStyle();
     const style = typeof a.style === 'object' && a.style ? a.style : await getStyle(styleName);
-    const svg = toSvg(doc, style, { dark: !!a.dark });
+    const dark = !!a.dark;
+    // A still of one moment, when a scene is named.
+    let frame = null, sceneIndex = 0, moment = '';
+    if (a.scene !== undefined) {
+      const tl = timeline(doc);
+      sceneIndex = typeof a.scene === 'number' ? a.scene - 1 : tl.scenes.findIndex((sc) => sc.label === a.scene);
+      const sc = tl.scenes[sceneIndex];
+      if (!sc) throw new Error(`No scene ${JSON.stringify(a.scene)}. This diagram has: ${tl.scenes.map((x, i) => `${i + 1} "${x.label}"`).join(', ') || 'no scenes'}`);
+      const bi = Math.min(sc.beats.length, Math.max(1, a.beat ?? sc.beats.length)) - 1;
+      frame = frameAt(doc, sceneIndex, sc.beats[bi].end - 1, tl);
+      moment = `, scene "${sc.label}" beat ${bi + 1}`;
+    }
+    const svg = toSvg(doc, style, { dark, frame, sceneIndex });
     const png = await toPng(svg);
-    const out = path.resolve(a.path || `${a.id || 'sample'}.${format}`);
-    await fs.writeFile(out, format === 'svg' ? svg : png);
+    const ext = { svg: 'svg', png: 'png', 'animated-svg': 'svg', mp4: 'mp4' }[format];
+    const out = path.resolve(a.path || `${a.id || 'sample'}${format === 'animated-svg' ? '.animated' : ''}.${ext}`);
+    let made = '';
+    if (format === 'mp4') {
+      const { toMp4 } = await import('../lib/video.js');
+      const r = await toMp4(doc, style, out, { dark });
+      made = ` (${r.seconds.toFixed(1)}s, ${r.frames} frames)`;
+    } else await fs.writeFile(out, format === 'svg' ? svg : format === 'png' ? png : toAnimatedSvg(doc, style, { dark }));
     const warnings = typeof a.style === 'object' && a.style ? styleWarnings(a.style) : [];
-    const text = `Wrote ${out} (style "${styleName}"${a.dark ? ', dark' : ''}). The picture is attached so you can check it.${warnings.length ? `\n\nStyle warnings:\n- ${warnings.join('\n- ')}` : ''}`;
+    const text = `Wrote ${out}${made} (style "${styleName}"${dark ? ', dark' : ''}${moment}). ${format === 'mp4' || format === 'animated-svg' ? 'Attached: the still diagram; use scene/beat to check single moments.' : 'The picture is attached so you can check it.'}${warnings.length ? `\n\nStyle warnings:\n- ${warnings.join('\n- ')}` : ''}`;
     // The rendered picture comes back with the result, so the agent can look at its work in one step.
     return [{ type: 'text', text }, { type: 'image', data: Buffer.from(png).toString('base64'), mimeType: 'image/png' }];
   }

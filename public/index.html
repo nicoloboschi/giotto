@@ -62,6 +62,17 @@
     #gallery small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
     #gallery p { grid-column: 1 / -1; margin: 2px; color: var(--muted); font-size: 12px; }
 
+    #scenes { display: flex; align-items: center; gap: 4px; height: 38px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    #scenes[hidden] { display: none; }
+    #scenes .tab { border: 0; border-radius: 6px; padding: 4px 10px; background: transparent; cursor: pointer; color: var(--muted); position: relative; }
+    #scenes .tab:hover { background: var(--hover); color: var(--fg); }
+    #scenes .tab.on { color: var(--fg); font-weight: 600; background: var(--active); }
+    #scenes .tab .bar { position: absolute; left: 8px; right: 8px; bottom: 2px; height: 2px; background: var(--accent); transform-origin: left; }
+    #scenes .grow { flex: 1; }
+    #scenes .btn { height: 26px; }
+    #say { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); max-width: min(760px, calc(100% - 40px)); padding: 10px 14px; border-radius: 8px;
+      background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.08); font-size: 14px; line-height: 1.45; text-align: center; }
+    #say[hidden] { display: none; }
     #toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 4; padding: 7px 12px; border-radius: 6px;
       background: var(--fg); color: var(--bg); font-size: 12.5px; pointer-events: none; transition: opacity .15s; }
     #toast[hidden] { display: block; opacity: 0; }
@@ -87,11 +98,13 @@
         <button id="style-btn" class="btn" aria-haspopup="true"></button>
         <div class="seg"><span>Export</span><button data-export="svg">SVG</button><button data-export="png">PNG</button><button data-export="json">JSON</button></div>
       </header>
+      <div id="scenes" hidden></div>
       <div id="gallery" hidden></div>
       <div id="stage">
         <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
         <textarea id="edit" rows="1"></textarea>
         <div id="empty">No diagrams yet. Ask your agent to draw something.</div>
+        <div id="say" hidden></div>
         <div id="toast" hidden></div>
         <div id="hint">Drag a box to move it · drag empty space to copy that area for your agent · double-click to rename · [ ] send back / bring front · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
       </div>
@@ -101,6 +114,7 @@
     import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE } from '/lib/render.js';
     import { resolveStyle } from '/lib/styles.js';
     import { diffDocs } from '/lib/edit.js';
+    import { timeline, frameAt } from '/lib/scenes.js';
 
     const $ = (id) => document.getElementById(id);
     const svg = $('canvas');
@@ -134,7 +148,11 @@
       svg.style.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.2px, transparent 1.2px)` : 'none';
       svg.style.backgroundSize = `${20 * view.zoom}px ${20 * view.zoom}px`;
       svg.style.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
-      let out = doc ? drawContent(doc, S, { selected: [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, resolved: placed() }) : '';
+      const frame = player.on && doc?.scenes?.length ? frameAt(doc, player.scene, player.t, player.tl) : null;
+      let out = doc ? drawContent(doc, S, { selected: [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame }) : '';
+      $('say').hidden = !frame?.say;
+      if (frame?.say && $('say').textContent !== frame.say) $('say').textContent = frame.say;
+      document.querySelectorAll('#scenes .bar').forEach((b, i) => (b.style.transform = `scaleX(${i === player.scene && player.tl ? Math.min(1, player.t / player.tl.scenes[i].duration) : 0})`));
       if (drag?.type === 'area') {
         const a = area(drag);
         out += `<rect x="${a.x}" y="${a.y}" width="${a.w}" height="${a.h}" rx="3" fill="#2563eb" fill-opacity="0.06" stroke="#2563eb" stroke-width="${1.5 / view.zoom}" stroke-dasharray="${6 / view.zoom} ${4 / view.zoom}"/>`;
@@ -198,6 +216,7 @@
       selected = new Set([...selected].filter(el));
       if (document.activeElement !== $('title')) $('title').value = doc.title || current;
       runSearch();
+      sceneBar();
       if (foreign) status(`updated ${new Date().toLocaleTimeString()}`);
       render();
     }
@@ -209,6 +228,7 @@
       current = id;
       base = null;
       doc = null;
+      Object.assign(player, { on: false, playing: false, scene: 0, t: 0 });
       undo = [];
       selected = new Set();
       history.replaceState(null, '', `#${id}`);
@@ -545,6 +565,74 @@
       if (f === 'png') download(`${current}.png`, await toPng(toSvg(doc, S)));
       if (f === 'json') download(`${current}.json`, base, 'application/json');
     }));
+
+    // ---- scenes: play a diagram's stories (tabs, play/pause, 1x/2x) ----
+
+    const player = { on: false, playing: false, scene: 0, t: 0, speed: 1, tl: null, last: 0 };
+
+    function sceneBar() {
+      const scenes = doc?.scenes || [];
+      $('scenes').hidden = !scenes.length;
+      if (!scenes.length) return stopPlayer();
+      player.tl = timeline(doc);
+      if (player.scene >= scenes.length) player.scene = 0;
+      const key = JSON.stringify([scenes.map((s) => s.label), player.on, player.playing, player.speed, player.scene]);
+      if ($('scenes').dataset.key === key) return;
+      $('scenes').dataset.key = key;
+      const tabs = scenes.map((sc, i) => {
+        const b = document.createElement('button');
+        b.className = 'tab' + (player.on && i === player.scene ? ' on' : '');
+        b.innerHTML = '<span></span><i class="bar"></i>';
+        b.firstChild.textContent = sc.label || `Scene ${i + 1}`;
+        b.onclick = () => startPlayer(i);
+        return b;
+      });
+      const btn = (text, title, fn) => {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.textContent = text;
+        b.title = title;
+        b.onclick = fn;
+        return b;
+      };
+      const grow = document.createElement('span');
+      grow.className = 'grow';
+      $('scenes').replaceChildren(...tabs, grow,
+        btn(player.playing ? '❚❚' : '▶', player.playing ? 'Pause' : 'Play', () => (player.playing ? pausePlayer() : startPlayer(player.scene, !player.on))),
+        btn(`${player.speed}×`, 'Speed', () => { player.speed = player.speed === 1 ? 2 : 1; sceneBar(); }),
+        ...(player.on ? [btn('✕', 'Back to the still diagram', stopPlayer)] : []));
+    }
+
+    function startPlayer(scene, fromStart = true) {
+      if (scene !== player.scene || fromStart) player.t = 0;
+      Object.assign(player, { on: true, playing: true, scene, last: performance.now() });
+      sceneBar();
+      requestAnimationFrame(tick);
+    }
+    function pausePlayer() {
+      player.playing = false;
+      sceneBar();
+    }
+    function stopPlayer() {
+      Object.assign(player, { on: false, playing: false, t: 0 });
+      if (!$('scenes').hidden) sceneBar();
+      render();
+    }
+    function tick(now) {
+      if (!player.playing) return;
+      player.t += (now - player.last) * player.speed;
+      player.last = now;
+      const sc = player.tl?.scenes[player.scene];
+      if (!sc) return stopPlayer();
+      if (player.t >= sc.duration) {
+        // Next scene, looping like the exports.
+        player.scene = (player.scene + 1) % player.tl.scenes.length;
+        player.t = 0;
+        sceneBar();
+      }
+      render();
+      requestAnimationFrame(tick);
+    }
 
     // ---- light / dark ----
 

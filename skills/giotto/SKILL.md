@@ -23,7 +23,7 @@ It needs git and Node.js 20+. It clones Giotto into `~/.giotto/app`, adds a `gio
 - `create_diagram(title, elements?, legend?)`: a new diagram. **New topic = new diagram.**
 - `get_diagram(id)`: elements plus `selectedIds`. "This" / "these" usually means the selected shapes.
 - `edit_diagram(id, add?, update?, remove?, title?, legend?)`: small changes. `update` takes partial elements by id; only the given fields change.
-- `export_diagram(id?, format: svg|png, path?, style?, dark?)`: writes a file **and returns the picture**, so you can look at your work. Leave out `id` to draw a sample.
+- `export_diagram(id?, format: svg|png|animated-svg|mp4, path?, style?, dark?, scene?, beat?)`: writes a file **and returns the picture**, so you can look at your work. Leave out `id` to draw a sample.
 
 Every change returns what was stored plus **warnings**: overlapping shapes, text spilling out of its box, fields, blocks or tones that aren't drawn. Fix them before you finish. Diagrams can't be deleted.
 
@@ -44,12 +44,31 @@ Every change returns what was stored plus **warnings**: overlapping shapes, text
 ```
 
 - **Let Giotto do the layout.** Put things in a `group` with `layout` (`row`, `column` or `grid`, plus `gap`, `columns`, `align`) instead of computing x/y. Leave out `width`/`height` and boxes fit their content. Groups wrap their children, draw behind them, and can nest.
-- **What goes in a box:** a `label` (`{"text"}`, or `{"title", "lines": [...], "align"}`; lines starting with `- ` are bullets), plus `tags` (pills). For richer boxes use `content` blocks: `title`, `text`, `list` (`items`, `ordered`), `chips` (`items`), `chat` (`turns` of `{who, text}`), `code`, `divider`. Any text understands `**bold**`, `` `code` `` and blank lines.
+- **What goes in a box:** a `label` (`{"text"}`, or `{"title", "lines": [...], "align"}`; lines starting with `- ` are bullets), plus `tags` (pills). For richer boxes use `content` blocks: `title`, `subtitle`, `text`, `list` (`items`, `ordered`), `chips` (`items`), `chat` (`turns` of `{who, text}`), `code`, `divider`, `rows` (tagged lines: `{tag, tone, text, meta, mark}`), `graph` (`nodes`, `links`, `lit`). Any text understands `**bold**`, `` `code` `` and blank lines.
 - **Notes** with `attachTo` sit beside their shape and move with it.
 - **Arrows** route themselves: straight when clear, around boxes when not. Optional: `fromSide`/`toSide` (`top`, `right`, `bottom`, `left`), `route` (`straight`, `elbow`), `labelAt` (0..1), `labelPosition` (`on`, `above`, `below`).
 - **Order:** `z` (higher on top, default 0).
 - **Legend:** `legend: {"title": "...", "items": [{"tone": "private", "text": "Private memories"}]}` on the diagram.
-- Types: `rectangle`, `ellipse`, `diamond`, `text`, `arrow`, `line`, `group`, `note`.
+- Types: `rectangle`, `ellipse`, `diamond`, `cylinder` (data at rest), `text`, `arrow`, `line`, `group` (without a label it only arranges, no frame), `note`.
+
+## Scenes: diagrams that tell a story
+
+A diagram can carry `scenes`: short stories played on the canvas (tabs, play, 1×/2×) and in animated exports. Each scene is a list of beats; a beat sends packets along arrows, fills boxes, lights boxes and narrates.
+
+```json
+"speed": 2200,
+"scenes": [{ "label": "retain()", "beats": [
+  { "edges": { "edge": "call-retain", "data": "the conversation" }, "show": { "agent": [{ "tag": "user", "tone": "gray", "text": "“Alice joined Google…”" }] }, "say": "Your agent sends what happened." },
+  { "edges": ["s-idx", "k-idx"], "ms": 3000 },
+  { "edges": { "edge": "call-retain", "back": true, "data": "✓ stored" }, "light": ["retain"] },
+  { "show": { "facts": [{ "type": "graph", "nodes": ["Alice", "Google"], "links": [["Alice", "Google"]], "lit": ["Alice"] }] }, "say": "A pause: no edges, just showing." }
+]}]
+```
+
+- `edges`: an arrow id, a list (they run at the same time), or `{edge, back, data}`. `show` fills a box's card with blocks or rows (`{tag, tone, text, meta, mark, mono}`); it stays until the scene ends, and boxes are sized for the largest content, so nothing jumps. `say` narrates; `ms` sets the beat length.
+- Flow figures read best with `"route": "curved"` arrows, `cylinder` stores, groups with `layout`, and `"quiet": true` for arrows that should only appear while used.
+- Set them with `create_diagram` / `edit_diagram` (`scenes`, `speed`; scenes are replaced as a whole). Warnings flag unknown arrow or box ids.
+- Check single moments with `export_diagram` + `scene` / `beat` (returns the picture). Export `animated-svg` for GitHub and docs (one self-contained file), or `mp4` for video.
 
 ## Styles: how everything looks
 

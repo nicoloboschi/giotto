@@ -30,6 +30,7 @@ Then ask your agent for a diagram. The first time, it sets Giotto up for you and
 - **Rich boxes:** titles, lists, tags, chat bubbles and code, with `**bold**` and `` `code` `` in any text.
 - **Point at things:** drag over an area and paste the copied description to your agent.
 - **Styles, separate from diagrams.** Diagrams say what things are; the active style decides how everything looks, including dark mode and export headers and footers. Agents make and change styles; you pick one from the gallery.
+- **Scenes:** diagrams can tell a story: packets travel along arrows, boxes fill in, a narration plays. Play them on the canvas, or export an animated SVG (plays on GitHub) or an MP4.
 - **Export** to SVG or PNG. The agent gets the picture back, along with warnings about overlaps or text that doesn't fit.
 
 Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete them.
