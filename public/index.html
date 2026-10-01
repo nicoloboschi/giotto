@@ -86,6 +86,34 @@
     #anim .pick button.on { background: var(--active); font-weight: 600; }
     #anim .row { display: flex; align-items: center; gap: 8px; }
     #anim-status { flex: 1; color: var(--muted); font-size: 12px; }
+    .panel { position: absolute; right: 10px; top: 55px; z-index: 6; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
+    .panel[hidden] { display: none; }
+    #history { width: 300px; max-height: calc(100% - 70px); overflow-y: auto; padding: 6px; }
+    #history button { display: block; width: 100%; text-align: left; border: 0; border-radius: 6px; padding: 7px 9px; background: transparent; cursor: pointer; }
+    #history button:hover { background: var(--hover); }
+    #history button.on { background: var(--active); }
+    #history small { display: block; color: var(--muted); font-size: 11.5px; }
+    #history p { margin: 6px 9px; color: var(--muted); font-size: 12px; }
+    #previewbar { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px;
+      background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.1); white-space: nowrap; }
+    #previewbar[hidden] { display: none; }
+    #ask { position: absolute; z-index: 6; width: 320px; padding: 10px; display: grid; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.14); }
+    #ask[hidden] { display: none; }
+    #ask textarea { width: 100%; min-height: 54px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--bg); color: var(--fg); font: inherit; outline: 0; }
+    #ask textarea:focus { border-color: var(--accent); }
+    #ask .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    #ask .chips button { border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; background: var(--bg); cursor: pointer; font-size: 12px; color: var(--muted); }
+    #ask .chips button:hover { color: var(--fg); border-color: var(--accent); }
+    #ask .row, #tray .row { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    #ask small { flex: 1; color: var(--muted); font-size: 11.5px; }
+    #tray { position: absolute; right: 12px; bottom: 34px; z-index: 5; width: 300px; padding: 10px; display: grid; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
+    #tray[hidden] { display: none; }
+    #tray ol { margin: 0; padding-left: 20px; max-height: 180px; overflow-y: auto; }
+    #tray li { margin: 2px 0; }
+    #tray li button { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0 4px; }
+    #tray strong { font-size: 12.5px; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { filter: brightness(1.08); background: var(--accent); }
     #toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 4; padding: 7px 12px; border-radius: 6px;
       background: var(--fg); color: var(--bg); font-size: 12.5px; pointer-events: none; transition: opacity .15s; }
     #toast[hidden] { display: block; opacity: 0; }
@@ -108,11 +136,13 @@
         <span id="status"></span>
         <input id="search" type="search" placeholder="Search  ⌘F" aria-label="Search this diagram" />
         <button id="theme-btn" class="btn" title="Light, dark, or follow the system"></button>
+        <button id="history-btn" class="btn" title="Every change is a version; look back and restore">History</button>
         <button id="style-btn" class="btn" aria-haspopup="true"></button>
         <div class="seg"><span>Export</span><button data-export="svg">SVG</button><button data-export="png">PNG</button><button data-export="json">JSON</button><button id="anim-btn" hidden title="Export the scenes as a video or animated SVG">Animation</button></div>
       </header>
       <div id="scenes" hidden></div>
       <div id="gallery" hidden></div>
+      <div id="history" class="panel" hidden></div>
       <div id="anim" hidden>
         <label>Format <span class="pick" data-key="format"><button data-v="mp4">MP4 video</button><button data-v="animated-svg">Animated SVG</button></span></label>
         <label>Scene <select id="anim-scene"></select></label>
@@ -125,7 +155,18 @@
         <div id="empty">No diagrams yet. Ask your agent to draw something.</div>
         <div id="say" hidden></div>
         <div id="toast" hidden></div>
-        <div id="hint">Drag a box to move it · drag empty space to copy that area for your agent · double-click to rename · [ ] send back / bring front · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
+        <div id="previewbar" hidden><span id="preview-label"></span><button id="preview-restore" class="btn primary">Restore this version</button><button id="preview-close" class="btn">Back to latest</button></div>
+        <div id="ask" hidden>
+          <textarea id="ask-text" placeholder="What should change here?"></textarea>
+          <div class="chips" id="ask-chips"></div>
+          <div class="row"><small>Enter to add · Esc to cancel</small><button id="ask-cancel" class="btn">Cancel</button><button id="ask-add" class="btn primary">Add</button></div>
+        </div>
+        <div id="tray" hidden>
+          <strong id="tray-title"></strong>
+          <ol id="tray-list"></ol>
+          <div class="row"><button id="tray-clear" class="btn">Clear</button><button id="tray-copy" class="btn primary">Copy requested changes</button></div>
+        </div>
+        <div id="hint">Drag a box to move it · drag over an area to request a change · double-click to rename · [ ] send back / bring front · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
       </div>
     </main>
   </div>
@@ -167,8 +208,15 @@
       svg.style.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.2px, transparent 1.2px)` : 'none';
       svg.style.backgroundSize = `${20 * view.zoom}px ${20 * view.zoom}px`;
       svg.style.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
-      const frame = player.on && doc?.scenes?.length ? frameAt(doc, player.scene, player.t, player.tl) : null;
-      let out = doc ? drawContent(doc, S, { selected: [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame }) : '';
+      const frame = !preview && player.on && doc?.scenes?.length ? frameAt(doc, player.scene, player.t, player.tl) : null;
+      const showing = preview?.doc || doc; // an old version while previewing history
+      let out = showing ? drawContent(showing, S, { selected: preview ? [] : [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame }) : '';
+      // Staged change requests: numbered dashed areas.
+      (staged[current] || []).forEach((it, i) => {
+        const r = it.area, z = view.zoom;
+        out += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="4" fill="#f59e0b" fill-opacity="0.07" stroke="#f59e0b" stroke-width="${1.5 / z}" stroke-dasharray="${6 / z} ${4 / z}" pointer-events="none"/>`;
+        out += `<circle cx="${r.x}" cy="${r.y}" r="${10 / z}" fill="#f59e0b" pointer-events="none"/><text x="${r.x}" y="${r.y}" font-size="${11 / z}" font-weight="700" fill="#fff" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" pointer-events="none">${i + 1}</text>`;
+      });
       $('say').hidden = !frame?.say;
       if (frame?.say && $('say').textContent !== frame.say) {
         // New narration fades in.
@@ -254,13 +302,17 @@
       base = null;
       doc = null;
       Object.assign(player, { on: false, playing: false, scene: 0, t: 0 });
+      preview = null;
+      $('previewbar').hidden = true;
+      $('ask').hidden = true;
+      asking = null;
       undo = [];
       selected = new Set();
       history.replaceState(null, '', `#${id}`);
       show(await res.text());
       selected = new Set(doc.selectedIds || []);
       fit();
-      render();
+      showTray();
       refreshList();
     }
 
@@ -322,8 +374,8 @@
     let lastDown = {};
     svg.addEventListener('pointerdown', (ev) => {
       if (!doc || ev.button > 1) return;
-      // Middle button or Space + drag pans, wherever you grab.
-      if (ev.button === 1 || spaceDown) {
+      // Middle button or Space + drag pans, wherever you grab. An old version (history preview) only pans.
+      if (ev.button === 1 || spaceDown || preview) {
         ev.preventDefault();
         drag = { type: 'pan', sx: ev.clientX, sy: ev.clientY, x: view.x, y: view.y };
         svg.classList.add('panning');
@@ -331,7 +383,10 @@
       }
       $('edit').blur();
       const p = toWorld(ev);
-      const id = ev.target.closest('[data-id]')?.dataset.id;
+      let id = ev.target.closest('[data-id]')?.dataset.id;
+      // A group moves only by its title bar; dragging its background draws a request area, like empty canvas.
+      const g = id && el(id)?.type === 'group' && placedEl(id);
+      if (g && p.y > g.y + (g.padding ?? S.groupPadding) * 0.6 + S.groupLabelSize * 1.4) id = undefined;
       // Every click redraws the canvas, so the browser's own dblclick never fires: count clicks here.
       const now = Date.now();
       if (id && lastDown.id === id && now - lastDown.at < 400) {
@@ -384,7 +439,7 @@
       const was = drag;
       drag = null;
       svg.classList.remove('panning');
-      if (was?.type === 'area') copyArea(area(was));
+      if (was?.type === 'area') askAbout(area(was));
       else if (was && was.type !== 'pan') {
         const later = waiting;
         waiting = null;
@@ -414,42 +469,175 @@
     new ResizeObserver(render).observe(svg);
     for (const ev of ['pointerdown', 'keydown', 'wheel']) document.addEventListener(ev, () => (lastInput = Date.now()), true);
 
-    // ---- area select: copies a description the user can paste to the agent ----
+    // ---- change requests: draw an area, say what should change, stage several, copy them all at once ----
 
     const area = (d) => ({ x: Math.min(d.start.x, d.end.x), y: Math.min(d.start.y, d.end.y), w: Math.abs(d.end.x - d.start.x), h: Math.abs(d.end.y - d.start.y) });
+    // Diagram id -> [{area, items, text}]; kept in this browser until copied or cleared, so a reload doesn't lose them.
+    const staged = new Proxy({}, {
+      get: (o, id) => (o[id] ??= JSON.parse(store.get(`giotto-staged-${String(id)}`) || '[]')),
+      set: (o, id, v) => ((o[id] = v), store.set(`giotto-staged-${String(id)}`, JSON.stringify(v)), true),
+    });
+    const keepStaged = () => (staged[current] = staged[current]); // write the current list back to storage
+    let asking = null;
 
-    function describeArea(r, items) {
+    // What's in an area, as lines the agent can act on.
+    function describeItems(items) {
       const n = Math.round;
-      const lines = [`Giotto diagram "${doc.title || current}" (id: ${current}), area x ${n(r.x)}..${n(r.x + r.w)}, y ${n(r.y)}..${n(r.y + r.h)}:`];
-      if (!items.length) lines.push('- empty space');
-      for (const e of items) {
+      if (!items.length) return ['   (empty space)'];
+      return items.map((e) => {
         const tags = e.tags?.length ? ` [tags: ${e.tags.join(', ')}]` : '';
-        const what = `- ${e.type}${labelOf(e) ? ` "${labelOf(e).replace(/\n/g, ' ')}"` : ''} (id: ${e.id})${tags}`;
-        if (isRouted(e)) lines.push(`${what} from ${e.start.id} to ${e.end.id}`);
-        else {
-          const b = bounds(e, S);
-          lines.push(`${what} at x ${n(b.x)}, y ${n(b.y)}, size ${n(b.w)}×${n(b.h)}`);
-        }
-      }
-      return lines.join('\n');
+        const what = `   - ${e.type}${labelOf(e) ? ` "${labelOf(e).replace(/\n/g, ' ')}"` : ''} (id: ${e.id})${tags}`;
+        if (isRouted(e)) return `${what} from ${e.start.id} to ${e.end.id}`;
+        const b = bounds(e, S);
+        return `${what} at x ${n(b.x)}, y ${n(b.y)}, size ${n(b.w)}×${n(b.h)}`;
+      });
     }
 
-    async function copyArea(r) {
+    const SUGGEST = {
+      items: ['Make this bigger', 'Rename this', 'Move this', 'Remove this', 'Change the color', 'Add an arrow to…', 'Add more detail', 'Simplify this'],
+      empty: ['Add a box here', 'Add a note here', 'Add a group here', 'Move something here'],
+    };
+
+    function askAbout(r) {
       if (r.w * view.zoom < 5 && r.h * view.zoom < 5) return; // just a click on empty space
-      const inside = placed().filter((e) => e.type !== 'legend').filter((e) => {
+      const items = placed().filter((e) => e.type !== 'legend').filter((e) => {
         const b = bounds(e, S);
         return b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h;
       });
-      selected = new Set(inside.map((e) => e.id));
+      selected = new Set(items.map((e) => e.id));
       selectionChanged();
+      asking = { area: r, items };
+      // Suggestions fill the box; the box sits next to the area.
+      $('ask-chips').replaceChildren(...SUGGEST[items.length ? 'items' : 'empty'].map((t) => {
+        const b = document.createElement('button');
+        b.textContent = t;
+        b.onclick = () => {
+          const box = $('ask-text');
+          box.value = box.value ? `${box.value.trimEnd()} ${t.toLowerCase()}` : t;
+          box.focus();
+        };
+        return b;
+      }));
+      const st = $('stage').getBoundingClientRect(), sv = svg.getBoundingClientRect();
+      const left = sv.left - st.left + (r.x + r.w - view.x) * view.zoom + 10, top = sv.top - st.top + (r.y - view.y) * view.zoom;
+      Object.assign($('ask').style, { left: `${Math.max(8, Math.min(left, st.width - 330))}px`, top: `${Math.max(8, Math.min(top, st.height - 190))}px` });
+      $('ask-text').value = '';
+      $('ask').hidden = false;
       render();
+      setTimeout(() => $('ask-text').focus());
+    }
+
+    function stageRequest() {
+      const text = $('ask-text').value.trim();
+      if (!asking || !text) return;
+      staged[current].push({ ...asking, text });
+      keepStaged();
+      closeAsk();
+      showTray();
+    }
+    function closeAsk() {
+      asking = null;
+      $('ask').hidden = true;
+      render();
+    }
+    $('ask-add').onclick = stageRequest;
+    $('ask-cancel').onclick = closeAsk;
+    $('ask-text').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && !ev.shiftKey) ev.preventDefault(), stageRequest();
+      if (ev.key === 'Escape') closeAsk();
+    });
+
+    function showTray() {
+      const list = staged[current] || [];
+      $('tray').hidden = !list.length;
+      $('tray-title').textContent = `${list.length} requested change${list.length === 1 ? '' : 's'}`;
+      $('tray-list').replaceChildren(...list.map((it, i) => {
+        const li = document.createElement('li');
+        li.textContent = it.text;
+        const x = document.createElement('button');
+        x.textContent = '✕';
+        x.title = 'Remove';
+        x.onclick = () => (list.splice(i, 1), keepStaged(), showTray());
+        li.append(x);
+        return li;
+      }));
+      render();
+    }
+    $('tray-clear').onclick = () => ((staged[current] = []), showTray());
+    $('tray-copy').onclick = async () => {
+      const list = staged[current] || [];
+      const n = Math.round;
+      const text = [
+        `Requested changes (${list.length}) for Giotto diagram "${doc.title || current}" (id: ${current}):`,
+        ...list.flatMap((it, i) => [
+          '',
+          `${i + 1}. ${it.text}`,
+          `   Area x ${n(it.area.x)}..${n(it.area.x + it.area.w)}, y ${n(it.area.y)}..${n(it.area.y + it.area.h)}, containing:`,
+          ...describeItems(it.items),
+        ]),
+      ].join('\n');
       try {
-        await navigator.clipboard.writeText(describeArea(r, inside));
-        toast(inside.length ? `Copied ${inside.length} element${inside.length > 1 ? 's' : ''} for your agent. Paste it in your chat.` : 'Copied this empty area for your agent.');
+        await navigator.clipboard.writeText(text);
+        staged[current] = []; // copied: the staged requests are done
+        showTray();
+        toast(`Copied ${list.length} requested change${list.length === 1 ? '' : 's'}. Paste it to your agent.`);
       } catch {
         toast('Could not copy to the clipboard');
       }
+    };
+
+    // ---- history: every change is a version; preview one, restore it as the newest ----
+
+    let preview = null; // {v, doc} while looking at an old version
+    const SOURCE = { agent: 'agent', canvas: 'you, on the canvas', file: 'file edit', restore: 'restore', created: 'created', 'before history': 'before history' };
+
+    async function showHistory() {
+      const { versions } = await (await fetch(`/api/history?id=${current}`)).json();
+      const rows = versions.map((h, i) => {
+        const b = document.createElement('button');
+        b.className = (preview ? preview.v === h.v : i === 0) ? 'on' : '';
+        b.innerHTML = '<span></span><small></small>';
+        b.firstChild.textContent = `v${h.v}${i === 0 ? ' · latest' : ''}`;
+        b.lastChild.textContent = `${ago(h.at)} · ${SOURCE[h.source] || h.source}${h.from ? ` · restored from v${h.from}` : ''}`;
+        b.onclick = () => (i === 0 ? closePreview() : openPreview(h.v));
+        return b;
+      });
+      const tip = document.createElement('p');
+      tip.textContent = versions.length ? 'Pick a version to look at it. Restoring makes it the newest version; nothing is lost.' : 'No versions yet: the first change starts the history.';
+      $('history').replaceChildren(...rows, tip);
+      $('gallery').hidden = true;
+      $('history').hidden = false;
     }
+
+    async function openPreview(v) {
+      const text = await (await fetch(`/api/history/version?id=${current}&v=${v}`)).text();
+      preview = { v, doc: JSON.parse(text) };
+      stopPlayer();
+      $('preview-label').textContent = `Looking at v${v}`;
+      $('previewbar').hidden = false;
+      render();
+      showHistory();
+    }
+    function closePreview() {
+      preview = null;
+      $('previewbar').hidden = true;
+      render();
+      if (!$('history').hidden) showHistory();
+    }
+    $('preview-close').onclick = closePreview;
+    $('preview-restore').onclick = async () => {
+      const v = preview.v;
+      const res = await (await fetch(`/api/history/restore?id=${current}`, { method: 'POST', body: JSON.stringify({ v }) })).json();
+      closePreview();
+      toast(`Restored v${v} as v${res.v}`);
+    };
+    $('history-btn').onclick = (ev) => {
+      ev.stopPropagation();
+      $('history').hidden ? showHistory() : ($('history').hidden = true);
+    };
+    document.addEventListener('pointerdown', (ev) => {
+      if (!ev.target.closest('#history, #history-btn')) $('history').hidden = true;
+    });
 
     let toastTimer;
     function toast(msg) {

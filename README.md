@@ -28,7 +28,8 @@ Then ask your agent for a diagram. The first time, it sets Giotto up for you and
 - **Live canvas** at http://localhost:4321 with every diagram in a sidebar. Move, resize and rename things by hand, search with ⌘F, undo with ⌘Z.
 - **No coordinates needed.** Groups lay out their children, boxes fit their text, notes stay pinned, arrows route around boxes, legends explain colors.
 - **Rich boxes:** titles, lists, tags, chat bubbles and code, with `**bold**` and `` `code` `` in any text.
-- **Point at things:** drag over an area and paste the copied description to your agent.
+- **Request changes visually:** draw areas on the canvas, write what should change in each, and copy them all as one "Requested changes" note for your agent.
+- **History:** every change is a numbered version. Look back at any of them and restore it; nothing is lost.
 - **Styles, separate from diagrams.** Diagrams say what things are; the active style decides how everything looks, including dark mode and export headers and footers. Agents make and change styles; you pick one from the gallery.
 - **Scenes:** diagrams can tell a story: packets travel along arrows, boxes fill in, a narration plays. Play them on the canvas, or export an animated SVG (plays on GitHub) or an MP4.
 - **Export** to SVG or PNG. The agent gets the picture back, along with warnings about overlaps or text that doesn't fit.
@@ -43,6 +44,7 @@ Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete t
 | `create_diagram`, `edit_diagram` | Make a diagram, then change it in small steps |
 | `export_diagram` | SVG or PNG file, plus the picture; can preview an unsaved style |
 | `list_styles`, `save_style`, `use_style` | Make, change and switch styles |
+| `diagram_history`, `restore_version` | Every change is a version; restore one as the newest |
 
 ## Develop
 

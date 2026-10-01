@@ -13,6 +13,7 @@ import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, validId } from
 import { toSvg, layoutWarnings, SAMPLE } from '../lib/render.js';
 import { timeline, frameAt, sceneWarnings, forExport } from '../lib/scenes.js';
 import { toAnimatedSvg } from '../lib/animate.js';
+import { historyStore } from '../lib/history.js';
 import { DEFAULT_STYLE, STYLE_FORMAT, resolveStyle, styleWarnings } from '../lib/styles.js';
 
 const { values: opts, positionals } = parseArgs({
@@ -48,7 +49,7 @@ if (positionals[0] === 'update') {
 }
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
-  .update(['bin/giotto.js', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
+  .update(['bin/giotto.js', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/history.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
   .digest('hex')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
@@ -70,7 +71,14 @@ const readDoc = async (id) => {
     throw new Error(e.code === 'ENOENT' ? `No diagram "${id}". Call list_diagrams.` : e.message);
   }
 };
-const writeDoc = (id, doc) => fs.writeFile(fileOf(id), JSON.stringify(doc, null, 2) + '\n');
+const history = historyStore(dir, readText);
+// Every write goes through here: the change is recorded as the next version first, then written.
+async function saveText(id, text, source, extra) {
+  const v = await history.record(id, text, source, extra);
+  await fs.writeFile(fileOf(id), text);
+  return v;
+}
+const writeDoc = (id, doc, source = 'agent') => saveText(id, JSON.stringify(doc, null, 2) + '\n', source);
 
 async function listDiagrams() {
   const names = (await fs.readdir(dir)).filter((n) => n.endsWith('.json') && validId(n.slice(0, -5)));
@@ -93,7 +101,9 @@ async function createDiagram(title, elements = [], legend, extra = {}) {
   const taken = new Set((await fs.readdir(dir)).map((n) => n.replace(/\.json$/, '')));
   const id = slugify(title, taken);
   const doc = applyEdit({ title, ...extra, elements: [], selectedIds: [] }, { add: elements, legend });
-  await fs.writeFile(fileOf(id), JSON.stringify(doc, null, 2) + '\n', { flag: 'wx' });
+  const text = JSON.stringify(doc, null, 2) + '\n';
+  await fs.writeFile(fileOf(id), text, { flag: 'wx' });
+  await history.record(id, text, 'created');
   return id;
 }
 
@@ -154,7 +164,10 @@ function serve() {
     const id = name?.endsWith('.json') && name.slice(0, -5);
     if (!validId(id)) return;
     const text = await readText(id).catch(() => null);
-    if (text !== null && text !== known.get(id)) broadcast(id, text);
+    if (text === null) return;
+    if (text !== known.get(id)) broadcast(id, text);
+    // Someone edited the file directly (not through Giotto): that's a version too. Our own writes are already recorded.
+    history.record(id, text, 'file').catch(() => {});
   });
   watch(stylesDir, () => push({ type: 'styles' })); // tabs refetch styles and the active one
 
@@ -197,9 +210,19 @@ function serve() {
         if (version !== VERSION || !patch) return send(409, { error: 'This canvas runs old code. Reload it.' });
         // Only the fields the user changed, merged into the file as it is now: the agent's newer edits stay.
         const text = JSON.stringify(mergePatch(await readDoc(id), patch), null, 2) + '\n';
-        await fs.writeFile(fileOf(id), text);
+        await saveText(id, text, 'canvas');
         broadcast(id, text);
         return send(200, { text });
+      }
+      // History: list versions, read one, restore one (as a new version).
+      if (route === 'GET /api/history') return send(200, { versions: await history.summary(id) });
+      if (route === 'GET /api/history/version') return send(200, (await history.get(id, +searchParams.get('v'))).text, 'application/json');
+      if (route === 'POST /api/history/restore') {
+        const { v } = await body();
+        const text = (await history.get(id, +v)).text;
+        const nv = await saveText(id, text, 'restore', { from: +v });
+        broadcast(id, text);
+        return send(200, { v: nv });
       }
       if (route === 'GET /api/events') {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
@@ -336,6 +359,18 @@ Also the way to preview a style before saving or switching to it: pass the style
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
   {
+    name: 'diagram_history',
+    description: 'List a diagram\'s versions, newest first: v, when, who changed it (agent, canvas, file, restore), and what a restore came from. Every change makes a new version; the server numbers them.',
+    inputSchema: { type: 'object', properties: idArg, required: ['id'] },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'restore_version',
+    description: 'Bring back an earlier version of a diagram. It becomes the newest version (nothing is lost: the versions after it stay in the history).',
+    inputSchema: { type: 'object', properties: { ...idArg, v: { type: 'number' } }, required: ['id', 'v'] },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  },
+  {
     name: 'use_style',
     description: 'Make a style active. Every diagram on the canvas switches to it live.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
@@ -375,17 +410,17 @@ async function callTool(name, a = {}) {
   if (name === 'create_diagram') {
     const id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer', 'scenes', 'speed'].filter((k) => a[k]).map((k) => [k, a[k]])));
     const doc = await readDoc(id);
-    return report(`Created "${id}". Give the user this link: ${linkTo(id)}`, doc, doc.elements.map((e) => e.id));
+    return report(`Created "${id}" (v${(await history.latest(id))?.v ?? 1}). Give the user this link: ${linkTo(id)}`, doc, doc.elements.map((e) => e.id));
   }
   if (name === 'get_diagram') return JSON.stringify({ id: a.id, url: linkTo(a.id), ...(await readDoc(a.id)) });
   if (name === 'edit_diagram') {
     const doc = applyEdit(await readDoc(a.id), a);
     if (a.title) doc.title = a.title;
     for (const k of ['subtitle', 'footer', 'scenes', 'speed']) if (k in a) a[k] === null ? delete doc[k] : (doc[k] = a[k]);
-    await writeDoc(a.id, doc);
+    const v = await writeDoc(a.id, doc);
     const ids = [...(a.add || []), ...(a.update || [])].map((e) => e.id);
     if (a.legend !== undefined) ids.push('_legend');
-    return report(`Done. ${doc.elements.length} elements. Give the user this link: ${linkTo(a.id)}`, doc, ids);
+    return report(`Done: saved as v${v}. ${doc.elements.length} elements. Give the user this link: ${linkTo(a.id)}`, doc, ids);
   }
   if (name === 'export_diagram') {
     let format = a.format || 'svg';
@@ -438,6 +473,15 @@ async function callTool(name, a = {}) {
       warnings.length ? `Warnings:\n- ${warnings.join('\n- ')}` : 'No warnings.',
       `Stored:\n${JSON.stringify(await getStyle(a.id))}`,
     ].join('\n\n');
+  }
+  if (name === 'diagram_history') {
+    await readDoc(a.id);
+    return JSON.stringify({ id: a.id, versions: await history.summary(a.id) });
+  }
+  if (name === 'restore_version') {
+    const old = await history.get(a.id, +a.v);
+    const v = await saveText(a.id, old.text, 'restore', { from: +a.v });
+    return `Restored v${a.v} as the new v${v} (the versions in between are kept). Give the user this link: ${linkTo(a.id)}`;
   }
   if (name === 'use_style') {
     await useStyle(a.id);
