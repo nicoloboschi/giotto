@@ -54,8 +54,8 @@ test('animated SVG plays everything on one clock', async () => {
   const { Resvg } = await import('@resvg/resvg-js');
   const svg = toAnimatedSvg(doc);
   assert.match(svg, /<animateMotion dur="1500ms" repeatCount="indefinite"/);
-  assert.match(svg, /@keyframes v0 \{[^}]*opacity: 1[^}]*\}/); // layers switch with CSS keyframes, like interfig
-  assert.match(svg, /animation: v\d+ 1\.5s infinite step-end/);
+  assert.match(svg, /@keyframes v0 \{.*opacity: 1/); // layers switch with CSS keyframes, like interfig
+  assert.match(svg, /animation: v\d+ 1\.5s infinite linear/); // fades, not hard switches
   assert.match(svg, /keyPoints="1;1;0;0"|keyPoints="1;0;0"/); // the back hop runs in reverse
   assert.match(svg, /Alice joined Google/);
   assert.match(svg, />Stored\.</);
@@ -71,4 +71,14 @@ test('animated exports play one scene or all, at any speed', async () => {
   assert.equal(timeline(forExport(two, { scene: 'write', speed: 2 })).total, 750);
   assert.equal(timeline(forExport(two, { speed: 0.5 })).total, 5000);
   assert.throws(() => forExport(two, { scene: 'nope' }), /No scene "nope"/);
+});
+
+test('changes fade instead of popping', async () => {
+  const { FADE } = await import('../lib/scenes.js');
+  const land = 1000 * TRAVEL; // beat 1 content lands when its packet arrives
+  const half = frameAt(doc, 0, land + FADE / 2);
+  assert.ok(half.fade.b.alpha > 0.4 && half.fade.b.alpha < 0.6);
+  assert.equal(frameAt(doc, 0, land + FADE + 1).fade.b.alpha, 1);
+  assert.ok(frameAt(doc, 0, 1000 + 50).glow.get('a') < 0.2); // beat 2's light is just fading in
+  assert.match(toSvg(doc, undefined, { frame: half }), /class="g-card-content" opacity="0\.\d+"/);
 });

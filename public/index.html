@@ -73,6 +73,8 @@
     #say { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); max-width: min(760px, calc(100% - 40px)); padding: 10px 14px; border-radius: 8px;
       background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.08); font-size: 14px; line-height: 1.45; text-align: center; }
     #say[hidden] { display: none; }
+    #say.fresh { animation: say-in .35s ease-out; }
+    @keyframes say-in { from { opacity: 0; transform: translate(-50%, 4px); } to { opacity: 1; transform: translate(-50%, 0); } }
     #anim { position: absolute; right: 10px; top: 55px; z-index: 6; width: 300px; padding: 12px; display: grid; gap: 10px;
       background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
     #anim[hidden] { display: none; }
@@ -168,7 +170,13 @@
       const frame = player.on && doc?.scenes?.length ? frameAt(doc, player.scene, player.t, player.tl) : null;
       let out = doc ? drawContent(doc, S, { selected: [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame }) : '';
       $('say').hidden = !frame?.say;
-      if (frame?.say && $('say').textContent !== frame.say) $('say').textContent = frame.say;
+      if (frame?.say && $('say').textContent !== frame.say) {
+        // New narration fades in.
+        $('say').textContent = frame.say;
+        $('say').classList.remove('fresh');
+        void $('say').offsetWidth;
+        $('say').classList.add('fresh');
+      }
       document.querySelectorAll('#scenes .bar').forEach((b, i) => (b.style.transform = `scaleX(${i === player.scene && player.tl ? Math.min(1, player.t / player.tl.scenes[i].duration) : 0})`));
       if (drag?.type === 'area') {
         const a = area(drag);
