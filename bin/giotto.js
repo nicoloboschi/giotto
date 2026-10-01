@@ -11,7 +11,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, validId } from '../lib/edit.js';
 import { toSvg, layoutWarnings, SAMPLE } from '../lib/render.js';
-import { timeline, frameAt, sceneWarnings } from '../lib/scenes.js';
+import { timeline, frameAt, sceneWarnings, forExport } from '../lib/scenes.js';
 import { toAnimatedSvg } from '../lib/animate.js';
 import { DEFAULT_STYLE, STYLE_FORMAT, resolveStyle, styleWarnings } from '../lib/styles.js';
 
@@ -138,6 +138,8 @@ async function useStyle(id) {
 function serve() {
   const clients = new Set();
   const known = new Map(); // id -> file content the browsers have
+  const jobs = new Map(); // video exports in progress
+  let nextJob = 1;
 
   const push = (msg) => {
     for (const res of clients) res.write(`data: ${JSON.stringify(msg)}\n\n`);
@@ -209,6 +211,32 @@ function serve() {
         req.on('close', () => clients.delete(res));
         return;
       }
+      // Animated exports from the canvas. Animated SVG comes back right away; video renders in the
+      // background and the page polls for progress, then downloads it.
+      if (route === 'POST /api/animation') {
+        const { format, scene, speed, dark } = await body();
+        const doc = forExport(await readDoc(id), { scene, speed });
+        const style = await getStyle(await currentStyle());
+        if (format === 'animated-svg') return send(200, toAnimatedSvg(doc, style, { dark: !!dark }), 'image/svg+xml');
+        const job = String(nextJob++), file = path.join(os.tmpdir(), `giotto-${process.pid}-${job}.mp4`);
+        jobs.set(job, { progress: 0, done: false, error: null, file });
+        import('../lib/video.js')
+          .then(({ toMp4 }) => toMp4(doc, style, file, { dark: !!dark, onProgress: (p) => (jobs.get(job).progress = p) }))
+          .then(() => (jobs.get(job).done = true), (e) => (jobs.get(job).error = e.message));
+        return send(200, { job });
+      }
+      if (route === 'GET /api/animation') {
+        const j = jobs.get(searchParams.get('job'));
+        return j ? send(200, { progress: j.progress, done: j.done, error: j.error }) : send(404, { error: 'no such export' });
+      }
+      if (route === 'GET /api/animation/file') {
+        const j = jobs.get(searchParams.get('job'));
+        if (!j?.done) return send(404, { error: 'not ready' });
+        res.writeHead(200, { 'content-type': 'video/mp4', 'cache-control': 'no-store' });
+        res.end(await fs.readFile(j.file));
+        jobs.delete(searchParams.get('job'));
+        return fs.rm(j.file, { force: true });
+      }
       if (route === 'POST /api/png') {
         res.writeHead(200, { 'content-type': 'image/png' });
         return res.end(await toPng((await body()).svg));
@@ -270,17 +298,20 @@ The user sees the change live. ${FORMAT}`,
   {
     name: 'export_diagram',
     description: `Write a diagram as a file and return the path, with a picture attached so you can check it.
-- svg / png: the still diagram. With "scene" (and "beat"), one moment of a scene instead: the end of that beat, with what it shows, lights and narrates.
-- animated-svg: every scene playing in a loop, in one self-contained SVG (plays in GitHub READMEs, PRs, docs).
-- mp4: the same as a video (needs ffmpeg; takes a little while).
+- svg: for a diagram with scenes, the scenes playing in a loop in one self-contained SVG (plays in GitHub READMEs, PRs, docs); otherwise the still diagram.
+- mp4: the scenes as a video (needs ffmpeg; takes a little while).
+- png: the still diagram.
+For svg and mp4: "scene" picks one scene to play (default: all, in order) and "speed" sets the pace (2 = twice as fast).
+For a still of one moment (svg or png): "scene" and "beat"; you get the end of that beat, with what it shows, lights and narrates.
 Also the way to preview a style before saving or switching to it: pass the style itself as an object (and leave out id to draw a sample diagram), then look at the picture.`,
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Diagram id. Leave out to draw a sample diagram (for style previews).' },
-        format: { type: 'string', enum: ['svg', 'png', 'animated-svg', 'mp4'], default: 'svg' },
-        scene: { description: 'For a still of one moment: the scene, by number (1 = first) or label.', anyOf: [{ type: 'number' }, { type: 'string' }] },
-        beat: { type: 'number', description: 'With scene: which beat (1 = first; default the last).' },
+        format: { type: 'string', enum: ['svg', 'png', 'mp4'], default: 'svg' },
+        scene: { description: 'The one scene to play (default all), or with beat / png the scene to show a moment of. By number (1 = first) or label.', anyOf: [{ type: 'number' }, { type: 'string' }] },
+        speed: { type: 'number', description: 'svg/mp4 with scenes: pace multiplier, e.g. 0.5, 1 (default), 2.' },
+        beat: { type: 'number', description: 'A still of the end of this beat of "scene" (1 = first) instead of the animation.' },
         path: { type: 'string', description: 'Where to write it. Default: ./<id>.<format> in the current directory.' },
         style: { description: 'A style id, or a full style object to preview without saving it. Default: the active style.', anyOf: [{ type: 'string' }, { type: 'object' }] },
         dark: { type: 'boolean', description: "Use the style's dark version." },
@@ -357,15 +388,20 @@ async function callTool(name, a = {}) {
     return report(`Done. ${doc.elements.length} elements. Give the user this link: ${linkTo(a.id)}`, doc, ids);
   }
   if (name === 'export_diagram') {
-    const format = a.format || 'svg';
-    if (!['svg', 'png', 'animated-svg', 'mp4'].includes(format)) throw new Error('format must be svg, png, animated-svg or mp4');
+    let format = a.format || 'svg';
+    if (!['svg', 'png', 'animated-svg', 'mp4'].includes(format)) throw new Error('format must be svg, png or mp4');
     const doc = a.id ? await readDoc(a.id) : SAMPLE;
+    // SVG of a diagram with scenes plays them, unless one moment (a beat) is asked for.
+    if (format === 'svg' && doc.scenes?.length && a.beat === undefined) format = 'animated-svg';
     const styleName = typeof a.style === 'string' ? a.style : a.style ? 'preview' : await currentStyle();
     const style = typeof a.style === 'object' && a.style ? a.style : await getStyle(styleName);
     const dark = !!a.dark;
     // A still of one moment, when a scene is named.
+    const animated = format === 'animated-svg' || format === 'mp4';
+    const played = animated ? forExport(doc, { scene: a.scene, speed: a.speed }) : doc;
     let frame = null, sceneIndex = 0, moment = '';
-    if (a.scene !== undefined) {
+    if (animated) moment = `, ${a.scene === undefined ? 'all scenes' : `scene ${JSON.stringify(a.scene)}`}${a.speed && a.speed !== 1 ? `, ${a.speed}×` : ''}`;
+    else if (a.scene !== undefined) {
       const tl = timeline(doc);
       sceneIndex = typeof a.scene === 'number' ? a.scene - 1 : tl.scenes.findIndex((sc) => sc.label === a.scene);
       const sc = tl.scenes[sceneIndex];
@@ -377,13 +413,13 @@ async function callTool(name, a = {}) {
     const svg = toSvg(doc, style, { dark, frame, sceneIndex });
     const png = await toPng(svg);
     const ext = { svg: 'svg', png: 'png', 'animated-svg': 'svg', mp4: 'mp4' }[format];
-    const out = path.resolve(a.path || `${a.id || 'sample'}${format === 'animated-svg' ? '.animated' : ''}.${ext}`);
+    const out = path.resolve(a.path || `${a.id || 'sample'}.${ext}`);
     let made = '';
     if (format === 'mp4') {
       const { toMp4 } = await import('../lib/video.js');
-      const r = await toMp4(doc, style, out, { dark });
+      const r = await toMp4(played, style, out, { dark });
       made = ` (${r.seconds.toFixed(1)}s, ${r.frames} frames)`;
-    } else await fs.writeFile(out, format === 'svg' ? svg : format === 'png' ? png : toAnimatedSvg(doc, style, { dark }));
+    } else await fs.writeFile(out, format === 'svg' ? svg : format === 'png' ? png : toAnimatedSvg(played, style, { dark }));
     const warnings = typeof a.style === 'object' && a.style ? styleWarnings(a.style) : [];
     const text = `Wrote ${out}${made} (style "${styleName}"${dark ? ', dark' : ''}${moment}). ${format === 'mp4' || format === 'animated-svg' ? 'Attached: the still diagram; use scene/beat to check single moments.' : 'The picture is attached so you can check it.'}${warnings.length ? `\n\nStyle warnings:\n- ${warnings.join('\n- ')}` : ''}`;
     // The rendered picture comes back with the result, so the agent can look at its work in one step.

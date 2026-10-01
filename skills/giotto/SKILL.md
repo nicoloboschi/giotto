@@ -23,7 +23,7 @@ It needs git and Node.js 20+. It clones Giotto into `~/.giotto/app`, adds a `gio
 - `create_diagram(title, elements?, legend?)`: a new diagram. **New topic = new diagram.**
 - `get_diagram(id)`: elements plus `selectedIds`. "This" / "these" usually means the selected shapes.
 - `edit_diagram(id, add?, update?, remove?, title?, legend?)`: small changes. `update` takes partial elements by id; only the given fields change.
-- `export_diagram(id?, format: svg|png|animated-svg|mp4, path?, style?, dark?, scene?, beat?)`: writes a file **and returns the picture**, so you can look at your work. Leave out `id` to draw a sample.
+- `export_diagram(id?, format: svg|png|mp4, path?, style?, dark?, scene?, beat?, speed?)`: writes a file **and returns the picture**, so you can look at your work. Leave out `id` to draw a sample.
 
 Every change returns what was stored plus **warnings**: overlapping shapes, text spilling out of its box, fields, blocks or tones that aren't drawn. Fix them before you finish. Diagrams can't be deleted.
 
@@ -68,7 +68,7 @@ A diagram can carry `scenes`: short stories played on the canvas (tabs, play, 1Ã
 - `edges`: an arrow id, a list (they run at the same time), or `{edge, back, data}`. `show` fills a box's card with blocks or rows (`{tag, tone, text, meta, mark, mono}`); it stays until the scene ends, and boxes are sized for the largest content, so nothing jumps. `say` narrates; `ms` sets the beat length.
 - Flow figures read best with `"route": "curved"` arrows, `cylinder` stores, groups with `layout`, and `"quiet": true` for arrows that should only appear while used.
 - Set them with `create_diagram` / `edit_diagram` (`scenes`, `speed`; scenes are replaced as a whole). Warnings flag unknown arrow or box ids.
-- Check single moments with `export_diagram` + `scene` / `beat` (returns the picture). Export `animated-svg` for GitHub and docs (one self-contained file), or `mp4` for video.
+- Exporting a diagram with scenes: `svg` plays them in one self-contained file (GitHub, docs), `mp4` makes a video. `scene` picks one (default all, in order), `speed` sets the pace (2 = twice as fast). To check a single moment, pass `scene` + `beat` (svg or png) and look at the returned picture.
 
 ## Styles: how everything looks
 

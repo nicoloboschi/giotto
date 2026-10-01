@@ -73,6 +73,17 @@
     #say { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); max-width: min(760px, calc(100% - 40px)); padding: 10px 14px; border-radius: 8px;
       background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.08); font-size: 14px; line-height: 1.45; text-align: center; }
     #say[hidden] { display: none; }
+    #anim { position: absolute; right: 10px; top: 55px; z-index: 6; width: 300px; padding: 12px; display: grid; gap: 10px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
+    #anim[hidden] { display: none; }
+    #anim label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+    #anim select { height: 29px; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; background: var(--bg); color: var(--fg); font: inherit; }
+    #anim .pick { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+    #anim .pick button { flex: 1; border: 0; padding: 5px 0; background: var(--bg); cursor: pointer; }
+    #anim .pick button + button { border-left: 1px solid var(--line); }
+    #anim .pick button.on { background: var(--active); font-weight: 600; }
+    #anim .row { display: flex; align-items: center; gap: 8px; }
+    #anim-status { flex: 1; color: var(--muted); font-size: 12px; }
     #toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 4; padding: 7px 12px; border-radius: 6px;
       background: var(--fg); color: var(--bg); font-size: 12.5px; pointer-events: none; transition: opacity .15s; }
     #toast[hidden] { display: block; opacity: 0; }
@@ -96,10 +107,16 @@
         <input id="search" type="search" placeholder="Search  ⌘F" aria-label="Search this diagram" />
         <button id="theme-btn" class="btn" title="Light, dark, or follow the system"></button>
         <button id="style-btn" class="btn" aria-haspopup="true"></button>
-        <div class="seg"><span>Export</span><button data-export="svg">SVG</button><button data-export="png">PNG</button><button data-export="json">JSON</button></div>
+        <div class="seg"><span>Export</span><button data-export="svg">SVG</button><button data-export="png">PNG</button><button data-export="json">JSON</button><button id="anim-btn" hidden title="Export the scenes as a video or animated SVG">Animation</button></div>
       </header>
       <div id="scenes" hidden></div>
       <div id="gallery" hidden></div>
+      <div id="anim" hidden>
+        <label>Format <span class="pick" data-key="format"><button data-v="mp4">MP4 video</button><button data-v="animated-svg">Animated SVG</button></span></label>
+        <label>Scene <select id="anim-scene"></select></label>
+        <label>Speed <span class="pick" data-key="speed"><button data-v="0.5">0.5×</button><button data-v="1">1×</button><button data-v="1.5">1.5×</button><button data-v="2">2×</button></span></label>
+        <div class="row"><span id="anim-status"></span><button id="anim-go" class="btn">Export</button></div>
+      </div>
       <div id="stage">
         <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
         <textarea id="edit" rows="1"></textarea>
@@ -561,6 +578,11 @@
     document.querySelectorAll('[data-export]').forEach((btn) => btn.addEventListener('click', async () => {
       if (!doc) return;
       const f = btn.dataset.export;
+      // A diagram with scenes exports as an animated SVG (all scenes, at the player's speed), like the docs figures.
+      if (f === 'svg' && doc.scenes?.length) {
+        const res = await fetch(`/api/animation?id=${current}`, { method: 'POST', body: JSON.stringify({ format: 'animated-svg', speed: player.speed, dark: isDark() }) });
+        return download(`${current}.svg`, await res.blob());
+      }
       if (f === 'svg') download(`${current}.svg`, toSvg(doc, S), 'image/svg+xml');
       if (f === 'png') download(`${current}.png`, await toPng(toSvg(doc, S)));
       if (f === 'json') download(`${current}.json`, base, 'application/json');
@@ -573,6 +595,7 @@
     function sceneBar() {
       const scenes = doc?.scenes || [];
       $('scenes').hidden = !scenes.length;
+      $('anim-btn').hidden = !scenes.length;
       if (!scenes.length) return stopPlayer();
       player.tl = timeline(doc);
       if (player.scene >= scenes.length) player.scene = 0;
@@ -633,6 +656,66 @@
       render();
       requestAnimationFrame(tick);
     }
+
+    // ---- animated export: MP4 or animated SVG, one scene or all, at a chosen speed ----
+
+    const anim = { format: 'mp4', speed: '1' };
+    function showAnimPanel() {
+      const scenes = doc?.scenes || [];
+      // Start from what the player shows: its scene and speed.
+      $('anim-scene').replaceChildren(new Option('All scenes, in order', 'all'), ...scenes.map((sc, i) => new Option(sc.label || `Scene ${i + 1}`, String(i + 1))));
+      $('anim-scene').value = player.on ? String(player.scene + 1) : 'all';
+      anim.speed = String(player.speed);
+      syncPicks();
+      $('anim-status').textContent = '';
+      $('gallery').hidden = true;
+      $('anim').hidden = false;
+    }
+    function syncPicks() {
+      document.querySelectorAll('#anim .pick').forEach((p) => p.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === anim[p.dataset.key])));
+    }
+    document.querySelectorAll('#anim .pick').forEach((p) => p.addEventListener('click', (ev) => {
+      const v = ev.target.closest('button')?.dataset.v;
+      if (v) (anim[p.dataset.key] = v), syncPicks();
+    }));
+    $('anim-btn').onclick = (ev) => {
+      ev.stopPropagation();
+      $('anim').hidden ? showAnimPanel() : ($('anim').hidden = true);
+    };
+    document.addEventListener('pointerdown', (ev) => {
+      if (!ev.target.closest('#anim, #anim-btn')) $('anim').hidden = true;
+    });
+
+    $('anim-go').onclick = async () => {
+      const scene = $('anim-scene').value, id = current;
+      const name = `${id}${scene === 'all' ? '' : `-scene${scene}`}${anim.speed === '1' ? '' : `-${anim.speed}x`}`;
+      const body = JSON.stringify({ format: anim.format, scene: scene === 'all' ? undefined : +scene, speed: +anim.speed, dark: isDark() });
+      $('anim-go').disabled = true;
+      try {
+        const res = await fetch(`/api/animation?id=${id}`, { method: 'POST', body });
+        if (!res.ok) throw new Error((await res.json()).error);
+        if (anim.format === 'animated-svg') {
+          download(`${name}.svg`, await res.blob());
+          $('anim-status').textContent = 'Downloaded.';
+          return;
+        }
+        // Video renders on the server; follow its progress, then download.
+        const { job } = await res.json();
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 700));
+          const st = await (await fetch(`/api/animation?job=${job}`)).json();
+          if (st.error) throw new Error(st.error);
+          $('anim-status').textContent = `Rendering video… ${Math.round(st.progress * 100)}%`;
+          if (st.done) break;
+        }
+        download(`${name}.mp4`, await (await fetch(`/api/animation/file?job=${job}`)).blob());
+        $('anim-status').textContent = 'Downloaded.';
+      } catch (e) {
+        $('anim-status').textContent = `Failed: ${e.message}`;
+      } finally {
+        $('anim-go').disabled = false;
+      }
+    };
 
     // ---- light / dark ----
 
