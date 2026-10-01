@@ -307,7 +307,15 @@ const linkTo = (id) => `${url}/#${id}`;
 // PNG is drawn here from the exact SVG, so it never depends on a browser being open.
 let Resvg;
 async function toPng(svg) {
-  Resvg ??= (await import('@resvg/resvg-js')).Resvg;
+  if (!Resvg) {
+    // Installs that updated from before this dependency existed won't have it yet: fetch it once.
+    const load = async () => (await import('@resvg/resvg-js')).Resvg;
+    Resvg = await load().catch(() => {
+      log('installing the PNG renderer (one time)...');
+      execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--silent'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+      return load();
+    });
+  }
   return new Resvg(svg, { fitTo: { mode: 'zoom', value: 2 }, font: { loadSystemFonts: true } }).render().asPng();
 }
 
