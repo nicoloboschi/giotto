@@ -1,11 +1,21 @@
 ---
 name: giotto
-description: Draw and update diagrams the user watches live in the Giotto canvas (giotto MCP tools), and change how they look with styles. Use when the user asks to draw, sketch, diagram, map or visualize something (architecture, flows, plans), to change a diagram or its style, to export one as SVG/PNG, or pastes a "Giotto diagram ... area" snippet.
+description: Draw and update diagrams the user watches live in the Giotto canvas (giotto MCP tools), and change how they look with styles. Use when the user asks to draw, sketch, diagram, map or visualize something (architecture, flows, plans), to change a diagram or its style, to export one as SVG/PNG, or pastes a "Giotto diagram ... area" snippet. If the giotto tools are missing, this skill explains how to install Giotto.
 ---
 
 # Giotto
 
 The user has a canvas open at http://localhost:4321. It shows every diagram in a sidebar and redraws live as you edit. The user can move and resize shapes and rename labels by hand, so always read before you change.
+
+## First time: install Giotto
+
+If you don't have the giotto tools (`list_diagrams`, `create_diagram`, ...), Giotto isn't installed yet. Tell the user, then run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nicoloboschi/giotto/main/install.sh | bash
+```
+
+It needs git and Node.js 20+. It clones Giotto into `~/.giotto/app`, adds a `giotto` command, and connects Claude Code and Codex to it. Agents load MCP servers when they start, so then ask the user to **restart this session** (or reconnect MCP servers, e.g. `/mcp` in Claude Code) and try again. Don't draw the diagram some other way in the meantime.
 
 ## Diagram tools
 

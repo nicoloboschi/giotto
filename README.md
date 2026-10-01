@@ -19,23 +19,31 @@ Diagrams your coding agent draws for you, live. The agent (Codex, Claude Code, a
 
 ## Install
 
-Giotto needs git and Node.js 20 or newer. Nothing to publish or download from a registry: it's this repo.
+Giotto needs git and Node.js 20 or newer. There's no package to publish or download: it's this repo.
+
+**1. Add the skill** to your agents (Claude Code, Codex, and [others](https://skills.sh)):
+
+```sh
+npx skills add nicoloboschi/giotto
+```
+
+**2. Ask for a diagram**, like *"draw how requests flow through this repo"*. The first time, the skill tells the agent that Giotto isn't installed yet, and the agent runs the installer for you:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nicoloboschi/giotto/main/install.sh | bash
 ```
 
-The installer:
+**3. Restart your agent session** so it loads the Giotto tools, and ask again. The canvas opens at http://localhost:4321.
+
+You can also run the installer yourself first. It:
 
 - clones Giotto into `~/.giotto/app` (or updates it when it's already there)
 - adds a `giotto` command in `~/.local/bin`
-- connects Claude Code and Codex if you have them: the MCP server and the [skill](skills/giotto/SKILL.md) that teaches the agent how to draw well
+- connects Claude Code and Codex to the MCP server, and links the skill if it isn't there yet
 
-Then ask your agent something like *"draw how requests flow through this repo"*. The first tool call starts the canvas and opens it in your browser.
+**Update** with `giotto update` (a `git pull`). The running canvas switches to the new code by itself. `npx skills update` updates the skill.
 
-**Update** with `giotto update` (a `git pull`). The running canvas switches to the new code by itself.
-
-**Other agents, or by hand:** clone the repo anywhere and point your agent's MCP config at `node /path/to/giotto/bin/giotto.js mcp`. Copy `skills/giotto` into your agent's skills folder.
+**Other agents, or by hand:** clone the repo anywhere and point your agent's MCP config at `node /path/to/giotto/bin/giotto.js mcp`.
 
 ## MCP tools
 
