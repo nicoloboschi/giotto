@@ -60,6 +60,7 @@ Diagrams say *what* is there; the active style decides *how it looks*. One style
 - **Preview before switching:** call `export_diagram` with `style` set to a style *object* (not saved yet), and no `id` for a sample. Look at the returned picture.
 - `save_style(id, style, use?)`: create a style, or change one by saving it again under the same id (every diagram updates). Returns what was stored, plus warnings. `default` can't be replaced; copy it under a new id.
 - `use_style(id)`: switch the active style.
+- **Exports** (PNG/SVG) can get a header and footer band: the style sets `header` / `footer` (`show`, `background`, `text`, sizes, `align`, `padding`, `divider`; the footer's `content` template understands `{title}`, `{date}`, `{id}`), plus `exportBackground`, `exportPadding` and `exportRadius`. Backgrounds can be gradients: `{"from", "to", "angle"}`. The diagram supplies the words: its `title`, `subtitle` and `footer`.
 - Useful style fields: `tones` (any names), `font` / `labelFont` / `textFont` / `arrowFont` and their sizes, `fontUrl` (a font stylesheet) or `fontFaces` (`@font-face` rules; use `data:` URLs so PNGs get the font too), `shadow` (`{dx, dy, blur, color, opacity}` or `false`), `arrowLabelBackground`, colors for groups, notes, tags, chat bubbles and code, `css`, and `dark` (overrides for dark mode). The full list is in `save_style`'s description.
 
 ## Doing it well

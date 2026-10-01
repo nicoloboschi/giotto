@@ -87,10 +87,10 @@ async function listDiagrams() {
   return out.filter(Boolean).sort((a, b) => b.updated.localeCompare(a.updated));
 }
 
-async function createDiagram(title, elements = [], legend) {
+async function createDiagram(title, elements = [], legend, extra = {}) {
   const taken = new Set((await fs.readdir(dir)).map((n) => n.replace(/\.json$/, '')));
   const id = slugify(title, taken);
-  const doc = applyEdit({ title, elements: [], selectedIds: [] }, { add: elements, legend });
+  const doc = applyEdit({ title, ...extra, elements: [], selectedIds: [] }, { add: elements, legend });
   await fs.writeFile(fileOf(id), JSON.stringify(doc, null, 2) + '\n', { flag: 'wx' });
   return id;
 }
@@ -238,7 +238,7 @@ const TOOLS = [
   {
     name: 'create_diagram',
     description: `Create a new diagram. Use this for any new topic instead of reusing an unrelated diagram. Optionally pass the first elements. ${FORMAT}`,
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, elements: elementsArg, legend: { type: 'object' } }, required: ['title'] },
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, subtitle: { type: 'string' }, footer: { type: 'string' }, elements: elementsArg, legend: { type: 'object' } }, required: ['title'] },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
   {
@@ -255,10 +255,11 @@ const TOOLS = [
 - remove: ids to delete (arrows and notes attached to them go too; groups forget them)
 - title: rename the diagram
 - legend: what each tone means, drawn below the diagram (null removes it)
+- subtitle / footer: text for the export header and footer, when the style shows them (null removes)
 The user sees the change live. ${FORMAT}`,
     inputSchema: {
       type: 'object',
-      properties: { ...idArg, title: { type: 'string' }, add: elementsArg, update: elementsArg, remove: { type: 'array', items: { type: 'string' } }, legend: { type: ['object', 'null'] } },
+      properties: { ...idArg, title: { type: 'string' }, subtitle: { type: ['string', 'null'] }, footer: { type: ['string', 'null'] }, add: elementsArg, update: elementsArg, remove: { type: 'array', items: { type: 'string' } }, legend: { type: ['object', 'null'] } },
       required: ['id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -332,7 +333,7 @@ async function callTool(name, a = {}) {
   await ensureCanvas();
   if (name === 'list_diagrams') return JSON.stringify(await listDiagrams());
   if (name === 'create_diagram') {
-    const id = await createDiagram(a.title, a.elements, a.legend);
+    const id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer'].filter((k) => a[k]).map((k) => [k, a[k]])));
     const doc = await readDoc(id);
     return report(`Created "${id}". Give the user this link: ${linkTo(id)}`, doc, doc.elements.map((e) => e.id));
   }
@@ -340,6 +341,7 @@ async function callTool(name, a = {}) {
   if (name === 'edit_diagram') {
     const doc = applyEdit(await readDoc(a.id), a);
     if (a.title) doc.title = a.title;
+    for (const k of ['subtitle', 'footer']) if (k in a) a[k] === null ? delete doc[k] : (doc[k] = a[k]);
     await writeDoc(a.id, doc);
     const ids = [...(a.add || []), ...(a.update || [])].map((e) => e.id);
     if (a.legend !== undefined) ids.push('_legend');

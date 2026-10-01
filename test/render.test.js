@@ -19,7 +19,7 @@ test('arrows are routed between the edges of their shapes', () => {
 
 test('svg is standalone and escapes text', () => {
   const svg = toSvg(doc);
-  assert.match(svg, /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" viewBox="-24 -24 448 98"/);
+  assert.match(svg, /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" viewBox="-32 -32 464 114"/); // diagram + 32px padding
   assert.match(svg, /A &lt;b&gt;/);
   assert.doesNotMatch(svg, /<b>/);
 });
@@ -148,4 +148,27 @@ test('style and element values can never make the SVG invalid', async () => {
   assert.doesNotMatch(svg, /onload/);
   assert.match(svg, /family=Inter:wght@400;700&amp;family=JetBrains\+Mono/);
   new Resvg(svg).render(); // a strict XML parser accepts it
+});
+
+test('export header, footer and backgrounds come from the style', async () => {
+  const { Resvg } = await import('@resvg/resvg-js');
+  const doc = { id: 'kate', title: 'Kate & agent', subtitle: 'What gets remembered', elements: [{ id: 'a', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }] };
+  const style = {
+    exportBackground: { from: '#fdf2f8', to: '#eff6ff', angle: 90 }, exportRadius: 16,
+    header: { show: true, background: '#111827', text: '#ffffff', align: 'center', divider: '#e5e7eb' },
+    footer: { show: true, content: 'Acme · {title} · {id}', align: 'right' },
+    dark: { header: { background: '#000000' } },
+  };
+  const svg = toSvg(doc, style);
+  assert.match(svg, /class="g-header-title"[^>]*text-anchor="middle"[^>]*>Kate &amp; agent</);
+  assert.match(svg, /What gets remembered/);
+  assert.match(svg, />Acme · Kate &amp; agent · kate</);
+  assert.match(svg, /<linearGradient/);
+  assert.match(svg, /clip-path="url\(#g-frame\)"/);
+  assert.match(svg, /class="g-header"[^>]*fill="#111827"/);
+  assert.match(toSvg(doc, style, { dark: true }), /class="g-header"[^>]*fill="#000000"/); // dark override, rest kept
+  assert.match(toSvg(doc, style, { dark: true }), /text-anchor="middle"/);
+  assert.match(toSvg({ ...doc, footer: 'Draft' }, style), />Draft</); // the diagram's own footer wins
+  assert.doesNotMatch(toSvg(doc), /g-header|g-footer/); // the default style shows neither
+  new Resvg(svg).render();
 });

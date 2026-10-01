@@ -19,7 +19,7 @@ Diagrams your coding agent draws for you, live. The agent (Codex, Claude Code, a
 - **Point the agent at things.** Drag over an empty part of the canvas: Giotto selects what's inside and copies a short description to your clipboard (diagram, area, each element with its id and position). Paste it in your chat: "make these red", "add a cache here".
 - **Search** with ⌘F.
 - **Styles, separate from diagrams.** One style is active and it restyles every diagram: background, fonts, colors, lines, corners, shadows, arrowheads, even custom CSS, with an optional dark version. Diagrams say what things are (`tone: "private"`); the style decides their color. Only a default style is built in. Agents make the others, preview them before switching, and can change them; a change shows up on every diagram at once. Pick a style from the gallery and it applies instantly, in light, dark or auto.
-- **Export** to SVG, PNG or JSON from the header, or let the agent do it with `export_diagram`.
+- **Export** to SVG, PNG or JSON from the header, or let the agent do it with `export_diagram`. Styles can frame exports with a header (title, subtitle) and a footer, gradient backgrounds and rounded corners.
 - **Small and local.** Plain Node, one HTML page, one dependency ([resvg](https://github.com/yisibl/resvg-js), to draw PNGs without a browser). The same drawing code makes the canvas, the SVG and the PNG, so they always match.
 
 ## Install
