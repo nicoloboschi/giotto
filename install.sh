@@ -25,6 +25,9 @@ else
   git clone --quiet --depth 1 "$REPO" "$APP"
 fi
 
+# One dependency: resvg, to draw PNGs without a browser.
+(cd "$APP" && npm install --omit=dev --no-audit --no-fund --silent)
+
 mkdir -p "$BIN"
 chmod +x "$APP/bin/giotto.js"
 ln -sfn "$APP/bin/giotto.js" "$BIN/giotto"

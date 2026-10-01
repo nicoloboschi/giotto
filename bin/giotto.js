@@ -9,9 +9,9 @@ import readline from 'node:readline';
 import { execFileSync, spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { FORMAT, applyEdit, slugify, validId } from '../lib/edit.js';
-import { toSvg } from '../lib/render.js';
-import { DEFAULT_STYLE, STYLE_FORMAT } from '../lib/styles.js';
+import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, validId } from '../lib/edit.js';
+import { toSvg, SAMPLE } from '../lib/render.js';
+import { DEFAULT_STYLE, STYLE_FORMAT, resolveStyle, styleWarnings } from '../lib/styles.js';
 
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
@@ -38,6 +38,7 @@ const root = path.join(path.dirname(self), '..');
 if (positionals[0] === 'update') {
   try {
     execFileSync('git', ['-C', root, 'pull', '--ff-only'], { stdio: 'inherit' });
+    execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--silent'], { cwd: root, stdio: 'inherit' });
   } catch {
     process.exit(1); // git already said why
   }
@@ -135,8 +136,6 @@ async function useStyle(id) {
 function serve() {
   const clients = new Set();
   const known = new Map(); // id -> file content the browsers have
-  const exports = new Map(); // request id -> resolve
-  let nextExport = 1;
 
   const push = (msg) => {
     for (const res of clients) res.write(`data: ${JSON.stringify(msg)}\n\n`);
@@ -155,24 +154,6 @@ function serve() {
   });
   watch(stylesDir, () => push({ type: 'styles' })); // tabs refetch styles and the active one
 
-  // PNG needs a real browser to turn the SVG into pixels; SVG is made in Node (see callTool).
-  async function exportViaBrowser(id, format, style) {
-    // Giotto never opens a browser itself: the agent gives the user the link.
-    if (!clients.size) throw new Error(`PNG export needs the canvas open in a browser. Ask the user to open ${url} and retry, or export SVG.`);
-    await readDoc(id); // fail fast on unknown ids
-    const reqId = nextExport++;
-    const result = new Promise((resolve, reject) => {
-      exports.set(reqId, resolve);
-      setTimeout(() => exports.delete(reqId) && reject(new Error('Browser did not export in 20s')), 20000);
-    });
-    // Only one tab should answer; the first one is as good as any.
-    const [first] = clients;
-    first.write(`data: ${JSON.stringify({ type: 'export', reqId, id, format, style })}\n\n`);
-    const { data, error } = await result;
-    if (error) throw new Error(error);
-    return data;
-  }
-
   const server = http.createServer(async (req, res) => {
     const send = (code, body, type = 'application/json') => {
       res.writeHead(code, { 'content-type': type });
@@ -190,7 +171,7 @@ function serve() {
       if (route === 'GET /') {
         return send(200, await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8'), 'text/html; charset=utf-8');
       }
-      if (route === 'GET /lib/render.js' || route === 'GET /lib/styles.js') {
+      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js'].includes(route)) {
         return send(200, await fs.readFile(path.join(root, pathname), 'utf8'), 'text/javascript');
       }
       if (route === 'GET /api/styles') return send(200, { current: await currentStyle(), styles: await listStyles() });
@@ -206,30 +187,28 @@ function serve() {
         return send(200, text);
       }
       if (route === 'PUT /api/doc') {
-        const { base, text } = await body();
-        // The file changed after this tab loaded it (agent or another tab): don't overwrite that work.
-        // ponytail: the user's edit from that moment is dropped; merge per element if this bites.
-        if (base !== (await readText(id))) return send(409, { error: 'file changed' });
+        const { version, patch } = await body();
+        // A tab running other code (older pages saved whole files and dropped fields they didn't know) can't save.
+        if (version !== VERSION || !patch) return send(409, { error: 'This canvas runs old code. Reload it.' });
+        // Only the fields the user changed, merged into the file as it is now: the agent's newer edits stay.
+        const text = JSON.stringify(mergePatch(await readDoc(id), patch), null, 2) + '\n';
         await fs.writeFile(fileOf(id), text);
-        broadcast(id, text); // other tabs update; the tab that saved skips its own echo
-        return send(200, { ok: true });
+        broadcast(id, text);
+        return send(200, { text });
       }
       if (route === 'GET /api/events') {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
         res.write(`data: ${JSON.stringify({ type: 'hello', version: VERSION })}\n\n`); // tabs reload when this changes
+        // Tabs on other code get only that hello: no updates, no export requests. Current ones reload from it;
+        // ancient ones (no version check) just stay inert.
+        if (searchParams.get('v') !== VERSION) return res.end();
         clients.add(res);
         req.on('close', () => clients.delete(res));
         return;
       }
-      if (route === 'POST /api/export') {
-        const { format, style } = await body();
-        return send(200, { data: await exportViaBrowser(id, format, style) });
-      }
-      if (route === 'POST /api/export-result') {
-        const { reqId, data, error } = await body();
-        exports.get(reqId)?.({ data, error });
-        exports.delete(reqId);
-        return send(200, { ok: true });
+      if (route === 'POST /api/png') {
+        res.writeHead(200, { 'content-type': 'image/png' });
+        return res.end(await toPng((await body()).svg));
       }
       send(404, { error: 'not found' });
     } catch (e) {
@@ -284,16 +263,16 @@ The user sees the change live. ${FORMAT}`,
   },
   {
     name: 'export_diagram',
-    description: 'Export a diagram as an image file and return the path written. SVG works anytime; PNG is drawn by the open canvas (opens a browser if needed).',
+    description: `Write a diagram as an image file and return the path. Also the way to preview a style before saving or switching to it: pass the style itself as an object (and leave out id to draw a sample diagram), then look at the PNG. PNG is drawn from the same SVG, so they always match. Either way the rendered picture comes back in the result.`,
     inputSchema: {
       type: 'object',
       properties: {
-        ...idArg,
+        id: { type: 'string', description: 'Diagram id. Leave out to draw a sample diagram (for style previews).' },
         format: { type: 'string', enum: ['svg', 'png'], default: 'svg' },
         path: { type: 'string', description: 'Where to write it. Default: ./<id>.<format> in the current directory.' },
-        style: { type: 'string', description: 'Style id. Default: the one the user has active.' },
+        style: { description: 'A style id, or a full style object to preview without saving it. Default: the active style.', anyOf: [{ type: 'string' }, { type: 'object' }] },
+        dark: { type: 'boolean', description: "Use the style's dark version." },
       },
-      required: ['id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
@@ -323,37 +302,51 @@ The user sees the change live. ${FORMAT}`,
 
 const linkTo = (id) => `${url}/#${id}`;
 
+// PNG is drawn here from the exact SVG, so it never depends on a browser being open.
+let Resvg;
+async function toPng(svg) {
+  Resvg ??= (await import('@resvg/resvg-js')).Resvg;
+  return new Resvg(svg, { fitTo: { mode: 'zoom', value: 2 }, font: { loadSystemFonts: true } }).render().asPng();
+}
+
+// What the agent hears back after a change: the elements as stored, plus anything the drawing will ignore.
+async function report(intro, doc, ids) {
+  const touched = doc.elements.filter((e) => ids.includes(e.id));
+  const active = await currentStyle();
+  const warnings = elementWarnings(touched, Object.keys(resolveStyle(await getStyle(active)).tones), active);
+  return [intro, warnings.length ? `Warnings:\n- ${warnings.join('\n- ')}` : 'No warnings.', `Stored:\n${JSON.stringify(touched)}`].join('\n\n');
+}
+
 async function callTool(name, a = {}) {
   await ensureCanvas();
   if (name === 'list_diagrams') return JSON.stringify(await listDiagrams());
   if (name === 'create_diagram') {
     const id = await createDiagram(a.title, a.elements);
-    return `Created "${id}". Give the user this link: ${linkTo(id)}`;
+    const doc = await readDoc(id);
+    return report(`Created "${id}". Give the user this link: ${linkTo(id)}`, doc, doc.elements.map((e) => e.id));
   }
   if (name === 'get_diagram') return JSON.stringify({ id: a.id, url: linkTo(a.id), ...(await readDoc(a.id)) });
   if (name === 'edit_diagram') {
     const doc = applyEdit(await readDoc(a.id), a);
     if (a.title) doc.title = a.title;
     await writeDoc(a.id, doc);
-    return `Done. ${doc.elements.length} elements. Give the user this link: ${linkTo(a.id)}`;
+    const ids = [...(a.add || []), ...(a.update || [])].map((e) => e.id);
+    return report(`Done. ${doc.elements.length} elements. Give the user this link: ${linkTo(a.id)}`, doc, ids);
   }
   if (name === 'export_diagram') {
     const format = a.format || 'svg';
     if (!['svg', 'png'].includes(format)) throw new Error('format must be svg or png');
-    const out = path.resolve(a.path || `${a.id}.${format}`);
-    const style = a.style || (await currentStyle());
-    if (format === 'svg') {
-      await fs.writeFile(out, toSvg(await readDoc(a.id), await getStyle(style)));
-    } else {
-      fileOf(a.id); // validates the id
-      // Send the style itself: a tab may not have heard of a style saved a moment ago.
-      const body = JSON.stringify({ format, style: await getStyle(style) });
-      const res = await fetch(`${url}/api/export?id=${a.id}`, { method: 'POST', body });
-      const { data, error } = await res.json();
-      if (!res.ok) throw new Error(error);
-      await fs.writeFile(out, Buffer.from(data, 'base64'));
-    }
-    return `Wrote ${out} (style "${style}")`;
+    const doc = a.id ? await readDoc(a.id) : SAMPLE;
+    const styleName = typeof a.style === 'string' ? a.style : a.style ? 'preview' : await currentStyle();
+    const style = typeof a.style === 'object' && a.style ? a.style : await getStyle(styleName);
+    const svg = toSvg(doc, style, { dark: !!a.dark });
+    const png = await toPng(svg);
+    const out = path.resolve(a.path || `${a.id || 'sample'}.${format}`);
+    await fs.writeFile(out, format === 'svg' ? svg : png);
+    const warnings = typeof a.style === 'object' && a.style ? styleWarnings(a.style) : [];
+    const text = `Wrote ${out} (style "${styleName}"${a.dark ? ', dark' : ''}). The picture is attached so you can check it.${warnings.length ? `\n\nStyle warnings:\n- ${warnings.join('\n- ')}` : ''}`;
+    // The rendered picture comes back with the result, so the agent can look at its work in one step.
+    return [{ type: 'text', text }, { type: 'image', data: Buffer.from(png).toString('base64'), mimeType: 'image/png' }];
   }
   if (name === 'list_styles') return JSON.stringify({ current: await currentStyle(), styles: await listStyles() });
   if (name === 'save_style') {
@@ -362,7 +355,12 @@ async function callTool(name, a = {}) {
     if (!a.style || typeof a.style !== 'object' || Array.isArray(a.style)) throw new Error('style must be an object');
     await fs.writeFile(path.join(stylesDir, `${a.id}.json`), JSON.stringify(a.style, null, 2) + '\n');
     if (a.use) await useStyle(a.id);
-    return `Saved style "${a.id}"${a.use ? ' and made it active' : ''}.`;
+    const warnings = styleWarnings(a.style);
+    return [
+      `Saved style "${a.id}"${a.use ? ' and made it active' : ''}.`,
+      warnings.length ? `Warnings:\n- ${warnings.join('\n- ')}` : 'No warnings.',
+      `Stored:\n${JSON.stringify(await getStyle(a.id))}`,
+    ].join('\n\n');
   }
   if (name === 'use_style') {
     await useStyle(a.id);
@@ -424,7 +422,8 @@ async function runMcp() {
       reply({ id, result: { tools: TOOLS } });
     } else if (method === 'tools/call') {
       try {
-        reply({ id, result: { content: [{ type: 'text', text: await callTool(params.name, params.arguments) }] } });
+        const out = await callTool(params.name, params.arguments);
+        reply({ id, result: { content: Array.isArray(out) ? out : [{ type: 'text', text: out }] } });
       } catch (e) {
         reply({ id, result: { content: [{ type: 'text', text: e.message }], isError: true } });
       }

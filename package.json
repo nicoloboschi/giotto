@@ -14,5 +14,8 @@
     "test": "node --test test/*.test.js"
   },
   "private": true,
-  "repository": "github:nicoloboschi/giotto"
+  "repository": "github:nicoloboschi/giotto",
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2"
+  }
 }
