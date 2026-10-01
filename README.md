@@ -21,6 +21,7 @@ Then ask your agent for a diagram. The first time, it sets Giotto up for you and
 - Update: `giotto update`. The running canvas switches to the new code by itself.
 - Other agents: point your MCP config at `node /path/to/giotto/bin/giotto.js mcp`.
 - ChatGPT / Claude.ai (diagram drawn inside the chat): run `giotto mcp --http 4322`, put a tunnel in front (`ngrok http 4322`), and add the printed `https://<tunnel>/mcp/<secret>` URL as a connector (ChatGPT: Settings → Apps → Developer mode). Diagrams still save to `~/.giotto`, so the local canvas updates too.
+- Hosted (Manufact, or any Node host): `npm start` serves MCP at `/mcp` on `$PORT` (default 3000), with no local canvas. Anyone with the URL can use it; set `GIOTTO_SECRET` to serve at `/mcp/<secret>` instead. Diagrams live in `$GIOTTO_DIR` (default `~/.giotto`), so give it a persistent disk if you want them kept.
 
 </details>
 

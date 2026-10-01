@@ -31,6 +31,7 @@
     document.getElementById('view').innerHTML = dark ? diagram.svgDark : diagram.svg;
     document.getElementById('title').textContent = diagram.title;
     document.getElementById('bar').hidden = false;
+    document.getElementById('open').hidden = !diagram.url; // hosted: no canvas to open
     send({ method: 'ui/notifications/size-changed', params: { width: document.body.scrollWidth, height: document.body.scrollHeight } });
   }
 

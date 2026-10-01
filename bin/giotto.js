@@ -22,6 +22,7 @@ const { values: opts, positionals } = parseArgs({
     dir: { type: 'string', default: process.env.GIOTTO_DIR || path.join(os.homedir(), '.giotto') },
     port: { type: 'string', default: process.env.GIOTTO_PORT || '4321' },
     http: { type: 'string' },
+    cloud: { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
   },
 });
@@ -33,6 +34,9 @@ if (opts.help) {
   giotto mcp --http 4322
                   the same MCP server over HTTP, with diagrams drawn inside the chat (ChatGPT, Claude).
                   Put a tunnel in front of it (e.g. ngrok http 4322) and add the printed URL as a connector.
+  giotto mcp --cloud
+                  hosted (npm start, e.g. on Manufact): MCP at /mcp on $PORT (3000), no local canvas.
+                  Set GIOTTO_SECRET to serve at /mcp/<secret> instead, so only people with the URL get in.
   giotto update   pull the latest Giotto (the running canvas switches over by itself)
 
 Options: --dir ~/.giotto (where diagrams live), --port 4321`);
@@ -382,7 +386,9 @@ Also the way to preview a style before saving or switching to it: pass the style
   },
 ];
 
-const linkTo = (id) => `${url}/#${id}`;
+// Hosted (--cloud) there is no canvas to link to: the diagram is only drawn in the chat.
+const linkTo = (id) => (opts.cloud ? null : `${url}/#${id}`);
+const seeIt = (id) => (opts.cloud ? '' : ` Give the user this link: ${id === undefined ? url : linkTo(id)}`);
 
 // PNG is drawn here from the exact SVG, so it never depends on a browser being open.
 let Resvg;
@@ -414,7 +420,7 @@ async function callTool(name, a = {}) {
   if (name === 'create_diagram') {
     const id = (a.id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer', 'scenes', 'speed'].filter((k) => a[k]).map((k) => [k, a[k]]))));
     const doc = await readDoc(id);
-    return report(`Created "${id}" (v${(await history.latest(id))?.v ?? 1}). Give the user this link: ${linkTo(id)}`, doc, doc.elements.map((e) => e.id));
+    return report(`Created "${id}" (v${(await history.latest(id))?.v ?? 1}).${seeIt(id)}`, doc, doc.elements.map((e) => e.id));
   }
   if (name === 'get_diagram') return JSON.stringify({ id: a.id, url: linkTo(a.id), ...(await readDoc(a.id)) });
   if (name === 'edit_diagram') {
@@ -424,7 +430,7 @@ async function callTool(name, a = {}) {
     const v = await writeDoc(a.id, doc);
     const ids = [...(a.add || []), ...(a.update || [])].map((e) => e.id);
     if (a.legend !== undefined) ids.push('_legend');
-    return report(`Done: saved as v${v}. ${doc.elements.length} elements. Give the user this link: ${linkTo(a.id)}`, doc, ids);
+    return report(`Done: saved as v${v}. ${doc.elements.length} elements.${seeIt(a.id)}`, doc, ids);
   }
   if (name === 'export_diagram') {
     let format = a.format || 'svg';
@@ -485,11 +491,11 @@ async function callTool(name, a = {}) {
   if (name === 'restore_version') {
     const old = await history.get(a.id, +a.v);
     const v = await saveText(a.id, old.text, 'restore', { from: +a.v });
-    return `Restored v${a.v} as the new v${v} (the versions in between are kept). Give the user this link: ${linkTo(a.id)}`;
+    return `Restored v${a.v} as the new v${v} (the versions in between are kept).${seeIt(a.id)}`;
   }
   if (name === 'use_style') {
     await useStyle(a.id);
-    return `Style "${a.id}" is active. Give the user this link: ${url}`;
+    return `Style "${a.id}" is active.${seeIt()}`;
   }
   throw new Error(`Unknown tool ${name}`);
 }
@@ -503,6 +509,7 @@ const waitFor = async (check) => {
 // Checked before every tool call: start it if it's gone, replace it if it runs older code.
 // ponytail: two agents on different giotto versions would keep replacing each other's canvas; pin one version if that happens.
 async function ensureCanvas() {
+  if (opts.cloud) return;
   const info = await getInfo();
   if (info?.version === VERSION) {
     if (info.dir !== dir) log(`warning: canvas on ${url} uses ${info.dir}, not ${dir}. Use --port.`);
@@ -589,22 +596,29 @@ async function runMcp() {
   }
 }
 
-// MCP over HTTP (stateless, plain JSON answers) for chats that run elsewhere and reach this machine through a tunnel.
-// Only /mcp/<secret> answers. The secret lives in <dir>/mcp-secret, so someone who finds the tunnel can't touch your diagrams.
+// MCP over HTTP (stateless, plain JSON answers) for chats that run elsewhere.
+// On your machine (behind a tunnel) only /mcp/<secret> answers. The secret lives in <dir>/mcp-secret, so someone who
+// finds the tunnel can't touch your diagrams. Hosted (--cloud) it's /mcp, or /mcp/$GIOTTO_SECRET when that is set.
 async function runMcpHttp(port) {
   await ensureCanvas();
-  const secretFile = path.join(dir, 'mcp-secret');
-  let secret = (await fs.readFile(secretFile, 'utf8').catch(() => '')).trim();
-  if (!secret) {
-    secret = randomBytes(18).toString('base64url');
-    await fs.writeFile(secretFile, secret + '\n', { mode: 0o600 });
+  let secret = process.env.GIOTTO_SECRET || '';
+  if (!secret && !opts.cloud) {
+    const secretFile = path.join(dir, 'mcp-secret');
+    secret = (await fs.readFile(secretFile, 'utf8').catch(() => '')).trim();
+    if (!secret) {
+      secret = randomBytes(18).toString('base64url');
+      await fs.writeFile(secretFile, secret + '\n', { mode: 0o600 });
+    }
   }
+  const endpoint = secret ? `/mcp/${secret}` : '/mcp';
   const server = http.createServer(async (req, res) => {
     const send = (code, body) => {
-      res.writeHead(code, { 'content-type': 'application/json' });
+      // CORS: browser tools (like MCP inspectors) can call it too. Without the endpoint path they get nothing.
+      res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS' });
       res.end(body === undefined ? '' : JSON.stringify(body));
     };
-    if (new URL(req.url, 'http://x').pathname !== `/mcp/${secret}`) return send(404, { error: 'not found' });
+    if (new URL(req.url, 'http://x').pathname !== endpoint) return send(404, { error: 'not found' });
+    if (req.method === 'OPTIONS') return send(204);
     if (req.method !== 'POST') return send(405, { error: 'POST only' });
     let b = '';
     for await (const chunk of req) b += chunk;
@@ -619,14 +633,16 @@ async function runMcpHttp(port) {
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', resolve);
+    // Hosted, the platform's proxy reaches it from outside the container; on your machine, only the tunnel (localhost).
+    server.listen(port, opts.cloud ? '0.0.0.0' : '127.0.0.1', resolve);
   });
-  log(`Giotto MCP on http://localhost:${port}/mcp/${secret}
+  if (opts.cloud) return log(`Giotto MCP on port ${port} at ${endpoint}`);
+  log(`Giotto MCP on http://localhost:${port}${endpoint}
 Put a tunnel in front of it (e.g. ngrok http ${port}), then add https://<tunnel>/mcp/${secret} as a connector in ChatGPT or Claude.`);
 }
 
 if (positionals[0] === 'mcp') {
-  (opts.http ? runMcpHttp(Number(opts.http)) : runMcp()).catch((e) => {
+  (opts.cloud ? runMcpHttp(Number(process.env.PORT || 3000)) : opts.http ? runMcpHttp(Number(opts.http)) : runMcp()).catch((e) => {
     log(e.message);
     process.exit(1);
   });

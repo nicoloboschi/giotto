@@ -11,6 +11,7 @@
   },
   "license": "MIT",
   "scripts": {
+    "start": "node bin/giotto.js mcp --cloud",
     "test": "node --test test/*.test.js"
   },
   "private": true,
