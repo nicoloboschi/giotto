@@ -17,23 +17,25 @@ Diagrams your coding agent draws for you, live. The agent (Codex, Claude Code, a
 - **Export** to SVG, PNG or JSON from the header, or let the agent do it with `export_diagram`.
 - **No dependencies, no internet.** Plain Node and one HTML page. The same drawing code makes the canvas and the SVG export.
 
-## Set it up
+## Install
 
-Giotto needs Node 20 or newer.
+Giotto needs git and Node.js 20 or newer. Nothing to publish or download from a registry: it's this repo.
 
-**Claude Code:**
 ```sh
-claude mcp add giotto -- npx -y github:nicoloboschi/notachat mcp
+curl -fsSL https://raw.githubusercontent.com/nicoloboschi/giotto/main/install.sh | bash
 ```
 
-**Codex:**
-```sh
-codex mcp add giotto -- npx -y github:nicoloboschi/notachat mcp
-```
+The installer:
+
+- clones Giotto into `~/.giotto/app` (or updates it when it's already there)
+- adds a `giotto` command in `~/.local/bin`
+- connects Claude Code and Codex if you have them: the MCP server and the [skill](skills/giotto/SKILL.md) that teaches the agent how to draw well
 
 Then ask your agent something like *"draw how requests flow through this repo"*. The first tool call starts the canvas and opens it in your browser.
 
-**Skill (recommended):** [`skills/giotto/SKILL.md`](skills/giotto/SKILL.md) teaches the agent the tools, the element format and how to make good layouts. Copy the `skills/giotto` folder to `~/.claude/skills/` (Claude Code) or `~/.codex/skills/` (Codex). Inside this repo it's already linked for Claude Code, and `.mcp.json` connects the local copy.
+**Update** with `giotto update` (a `git pull`). The running canvas switches to the new code by itself.
+
+**Other agents, or by hand:** clone the repo anywhere and point your agent's MCP config at `node /path/to/giotto/bin/giotto.js mcp`. Copy `skills/giotto` into your agent's skills folder.
 
 ## MCP tools
 
@@ -54,7 +56,7 @@ Then ask your agent something like *"draw how requests flow through this repo"*.
 - **Files:** diagrams in `~/.giotto/<id>.json`, agent styles in `~/.giotto/styles/<id>.json`, the active style's id in `~/.giotto/styles/current`. Change the folder with `--dir` or `GIOTTO_DIR`.
 - **Ports:** one canvas per port (default 4321, change with `--port` or `GIOTTO_PORT`). Two different folders need two different ports.
 - **PNG export** from the agent uses an open canvas tab to turn the drawing into pixels, and opens one if needed. SVG export doesn't need a browser.
-- **Canvas only:** `npx -y github:nicoloboschi/notachat` opens the canvas without an agent.
+- **Canvas only:** `giotto` opens the canvas without an agent.
 
 ## Develop
 
