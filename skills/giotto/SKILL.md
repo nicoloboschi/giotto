@@ -20,39 +20,51 @@ It needs git and Node.js 20+. It clones Giotto into `~/.giotto/app`, adds a `gio
 ## Diagram tools
 
 - `list_diagrams`: all diagrams, newest first. Start here.
-- `create_diagram(title, elements?)`: a new diagram. **New topic = new diagram.** Only edit an existing one when the user means that one.
-- `get_diagram(id)`: elements plus `selectedIds`. If the user says "this" or "these", they mean the selected shapes.
-- `edit_diagram(id, add?, update?, remove?, title?)`: small changes. `update` takes partial elements by id; only the given fields change. Removing a shape also removes its arrows.
-- `export_diagram(id, format: svg|png, path?, style?)`: writes an image file and returns its path. Uses the active style unless you pass one. PNG needs the canvas open in a browser; if it isn't, ask the user to open the link (or export SVG).
+- `create_diagram(title, elements?, legend?)`: a new diagram. **New topic = new diagram.**
+- `get_diagram(id)`: elements plus `selectedIds`. "This" / "these" usually means the selected shapes.
+- `edit_diagram(id, add?, update?, remove?, title?, legend?)`: small changes. `update` takes partial elements by id; only the given fields change.
+- `export_diagram(id?, format: svg|png, path?, style?, dark?)`: writes a file **and returns the picture**, so you can look at your work. Leave out `id` to draw a sample.
 
-There is no delete. Never try to remove a whole diagram.
+Every change returns what was stored plus **warnings**: overlapping shapes, text spilling out of its box, fields, blocks or tones that aren't drawn. Fix them before you finish. Diagrams can't be deleted.
 
-**Pasted areas:** the user can drag over part of the canvas and paste you a snippet like `Giotto diagram "X" (id: x), area x 0..200, y 0..150:` followed by the elements inside. Those ids are what they mean; the area coordinates tell you where to put new things.
+**Pasted areas:** the user can drag over part of the canvas and paste a snippet like `Giotto diagram "X" (id: x), area x 0..200, y 0..150:` with the elements inside. Those ids are what they mean; the coordinates say where to put new things.
 
 ## Elements
 
 ```json
-{"id":"api","type":"rectangle","x":0,"y":0,"width":160,"height":70,"label":{"text":"API"},"tone":"blue"}
-{"id":"db","type":"ellipse","x":260,"y":0,"width":160,"height":70,"label":{"text":"Postgres"},"tone":"yellow"}
-{"id":"api-db","type":"arrow","x":0,"y":0,"start":{"id":"api"},"end":{"id":"db"},"label":{"text":"SQL"}}
-{"id":"note","type":"text","x":0,"y":-60,"text":"Read path"}
+{"id":"layer","type":"group","x":0,"y":0,"label":{"title":"What the agent remembers"},"children":["chat","rules"],"layout":{"direction":"row","gap":40}}
+{"id":"chat","type":"rectangle","tone":"private","content":[
+  {"type":"title","text":"Kate and her agent"},
+  {"type":"chips","items":["user:kate","strategy: rules"]},
+  {"type":"chat","turns":[{"who":"Kate","text":"I'm **interviewing** next week."},{"who":"Agent","text":"Noted."}]}]}
+{"id":"rules","type":"rectangle","tone":"shared","label":{"title":"Team rules","lines":["- no Friday deploys","- two approvals per PR"]},"tags":["kind:rule"]}
+{"id":"db","type":"ellipse","x":0,"y":400,"tone":"store","label":{"text":"Postgres"}}
+{"id":"rules-db","type":"arrow","start":{"id":"rules"},"end":{"id":"db"},"label":{"text":"stored in"},"fromSide":"bottom"}
+{"id":"why","type":"note","attachTo":"db","text":"Backed up nightly"}
 ```
 
-Types: `rectangle`, `ellipse`, `diamond`, `text`, `arrow`, `line`. Arrows with `start` and `end` are routed for you and follow when shapes move. `strokeStyle`: `dashed` or `dotted`.
+- **Let Giotto do the layout.** Put things in a `group` with `layout` (`row`, `column` or `grid`, plus `gap`, `columns`, `align`) instead of computing x/y. Leave out `width`/`height` and boxes fit their content. Groups wrap their children, draw behind them, and can nest.
+- **What goes in a box:** a `label` (`{"text"}`, or `{"title", "lines": [...], "align"}`; lines starting with `- ` are bullets), plus `tags` (pills). For richer boxes use `content` blocks: `title`, `text`, `list` (`items`, `ordered`), `chips` (`items`), `chat` (`turns` of `{who, text}`), `code`, `divider`. Any text understands `**bold**`, `` `code` `` and blank lines.
+- **Notes** with `attachTo` sit beside their shape and move with it.
+- **Arrows** route themselves: straight when clear, around boxes when not. Optional: `fromSide`/`toSide` (`top`, `right`, `bottom`, `left`), `route` (`straight`, `elbow`), `labelAt` (0..1), `labelPosition` (`on`, `above`, `below`).
+- **Order:** `z` (higher on top, default 0).
+- **Legend:** `legend: {"title": "...", "items": [{"tone": "private", "text": "Private memories"}]}` on the diagram.
+- Types: `rectangle`, `ellipse`, `diamond`, `text`, `arrow`, `line`, `group`, `note`.
 
 ## Styles: how everything looks
 
-Diagrams say *what* is there; the active style decides *how it looks* (background, font, colors, lines, corners, shadows, arrowheads, extra CSS). One style applies to every diagram, and the user switches styles from a gallery in the UI.
+Diagrams say *what* is there; the active style decides *how it looks*. One style applies to every diagram; the user picks one from a gallery and can view it light or dark.
 
-- Color shapes with `tone` (`blue`, `green`, `yellow`, `red`, `purple`, `gray`), never hex colors, so every style can recolor them. `strokeColor`/`backgroundColor` pin a color in all styles; avoid them.
-- `list_styles`: the built-in `default` plus every style agents made, in full, and which is active. Copy one as a starting point.
-- `save_style(id, style, use?)`: create a style, or change one by saving it again under the same id (everything shown in it updates). `use: true` switches the canvas to it live. Fields you leave out fall back to the default style. `css` gives full control over the classes `g-shape`, `g-label`, `g-text`, `g-arrow`, `g-tone-<tone>`. `default` itself can't be replaced: save a copy under a new id.
+- Use `tone` for meaning (`private`, `shared`, `rule`, or plain `blue`...). The style decides each tone's color; a tone the style doesn't define shows untoned, with a warning. Avoid `strokeColor`/`backgroundColor`: they pin a color in every style.
+- `list_styles`: the built-in `default` plus every style agents made, in full. Copy one as a start.
+- **Preview before switching:** call `export_diagram` with `style` set to a style *object* (not saved yet), and no `id` for a sample. Look at the returned picture.
+- `save_style(id, style, use?)`: create a style, or change one by saving it again under the same id (every diagram updates). Returns what was stored, plus warnings. `default` can't be replaced; copy it under a new id.
 - `use_style(id)`: switch the active style.
+- Useful style fields: `tones` (any names), `font` / `labelFont` / `textFont` / `arrowFont` and their sizes, `fontUrl` (a font stylesheet) or `fontFaces` (`@font-face` rules; use `data:` URLs so PNGs get the font too), `shadow` (`{dx, dy, blur, color, opacity}` or `false`), `arrowLabelBackground`, colors for groups, notes, tags, chat bubbles and code, `css`, and `dark` (overrides for dark mode). The full list is in `save_style`'s description.
 
 ## Doing it well
 
-- Use readable ids (`api`, `api-db`) so later edits are easy.
-- Layout: flows go left to right or top to bottom, with about 60px gaps and no overlaps. Size shapes to fit their label (about 9px per character, at least 140x60).
-- One tone per kind of thing (for example services blue, data stores yellow).
-- Make several small `edit_diagram` calls rather than rebuilding everything. Don't move shapes the user placed unless asked.
-- Base the diagram on the real code you read, not on guesses.
+- Readable ids (`kate`, `rules-db`) make later edits easy.
+- One tone per kind of thing, plus a legend saying what each means.
+- Several small `edit_diagram` calls beat rebuilding. Don't move shapes the user placed unless asked.
+- Base the diagram on the real code you read, not on guesses. Export a PNG once to check the result.

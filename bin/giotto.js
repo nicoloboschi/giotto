@@ -10,7 +10,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, validId } from '../lib/edit.js';
-import { toSvg, SAMPLE } from '../lib/render.js';
+import { toSvg, layoutWarnings, SAMPLE } from '../lib/render.js';
 import { DEFAULT_STYLE, STYLE_FORMAT, resolveStyle, styleWarnings } from '../lib/styles.js';
 
 const { values: opts, positionals } = parseArgs({
@@ -46,7 +46,7 @@ if (positionals[0] === 'update') {
 }
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
-  .update(['bin/giotto.js', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
+  .update(['bin/giotto.js', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
   .digest('hex')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
@@ -87,10 +87,10 @@ async function listDiagrams() {
   return out.filter(Boolean).sort((a, b) => b.updated.localeCompare(a.updated));
 }
 
-async function createDiagram(title, elements = []) {
+async function createDiagram(title, elements = [], legend) {
   const taken = new Set((await fs.readdir(dir)).map((n) => n.replace(/\.json$/, '')));
   const id = slugify(title, taken);
-  const doc = applyEdit({ title, elements: [], selectedIds: [] }, { add: elements });
+  const doc = applyEdit({ title, elements: [], selectedIds: [] }, { add: elements, legend });
   await fs.writeFile(fileOf(id), JSON.stringify(doc, null, 2) + '\n', { flag: 'wx' });
   return id;
 }
@@ -156,7 +156,8 @@ function serve() {
 
   const server = http.createServer(async (req, res) => {
     const send = (code, body, type = 'application/json') => {
-      res.writeHead(code, { 'content-type': type });
+      // Never cached: after an update, a reload must get the new page and scripts.
+      res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' });
       res.end(typeof body === 'string' ? body : JSON.stringify(body));
     };
     const body = async () => {
@@ -171,7 +172,7 @@ function serve() {
       if (route === 'GET /') {
         return send(200, await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8'), 'text/html; charset=utf-8');
       }
-      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js'].includes(route)) {
+      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js', 'GET /lib/blocks.js'].includes(route)) {
         return send(200, await fs.readFile(path.join(root, pathname), 'utf8'), 'text/javascript');
       }
       if (route === 'GET /api/styles') return send(200, { current: await currentStyle(), styles: await listStyles() });
@@ -237,7 +238,7 @@ const TOOLS = [
   {
     name: 'create_diagram',
     description: `Create a new diagram. Use this for any new topic instead of reusing an unrelated diagram. Optionally pass the first elements. ${FORMAT}`,
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, elements: elementsArg }, required: ['title'] },
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, elements: elementsArg, legend: { type: 'object' } }, required: ['title'] },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
   {
@@ -251,12 +252,13 @@ const TOOLS = [
     description: `Change a diagram in small steps. Read it with get_diagram first.
 - add: new elements
 - update: partial elements matched by id; only given fields change ("label": {"text": "x"} to rename, null clears a field)
-- remove: ids to delete (arrows attached to them go too)
+- remove: ids to delete (arrows and notes attached to them go too; groups forget them)
 - title: rename the diagram
+- legend: what each tone means, drawn below the diagram (null removes it)
 The user sees the change live. ${FORMAT}`,
     inputSchema: {
       type: 'object',
-      properties: { ...idArg, title: { type: 'string' }, add: elementsArg, update: elementsArg, remove: { type: 'array', items: { type: 'string' } } },
+      properties: { ...idArg, title: { type: 'string' }, add: elementsArg, update: elementsArg, remove: { type: 'array', items: { type: 'string' } }, legend: { type: ['object', 'null'] } },
       required: ['id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -313,7 +315,8 @@ async function toPng(svg) {
 async function report(intro, doc, ids) {
   const touched = doc.elements.filter((e) => ids.includes(e.id));
   const active = await currentStyle();
-  const warnings = elementWarnings(touched, Object.keys(resolveStyle(await getStyle(active)).tones), active);
+  const style = await getStyle(active);
+  const warnings = [...elementWarnings(touched, Object.keys(resolveStyle(style).tones), active), ...layoutWarnings(doc, style, ids)];
   return [intro, warnings.length ? `Warnings:\n- ${warnings.join('\n- ')}` : 'No warnings.', `Stored:\n${JSON.stringify(touched)}`].join('\n\n');
 }
 
@@ -321,7 +324,7 @@ async function callTool(name, a = {}) {
   await ensureCanvas();
   if (name === 'list_diagrams') return JSON.stringify(await listDiagrams());
   if (name === 'create_diagram') {
-    const id = await createDiagram(a.title, a.elements);
+    const id = await createDiagram(a.title, a.elements, a.legend);
     const doc = await readDoc(id);
     return report(`Created "${id}". Give the user this link: ${linkTo(id)}`, doc, doc.elements.map((e) => e.id));
   }
@@ -331,6 +334,7 @@ async function callTool(name, a = {}) {
     if (a.title) doc.title = a.title;
     await writeDoc(a.id, doc);
     const ids = [...(a.add || []), ...(a.update || [])].map((e) => e.id);
+    if (a.legend !== undefined) ids.push('_legend');
     return report(`Done. ${doc.elements.length} elements. Give the user this link: ${linkTo(a.id)}`, doc, ids);
   }
   if (name === 'export_diagram') {

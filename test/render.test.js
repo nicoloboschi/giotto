@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { route, toSvg, bounds } from '../lib/render.js';
+import { resolve, toSvg, bounds, layoutWarnings } from '../lib/render.js';
 
 const doc = {
   elements: [
@@ -11,7 +11,7 @@ const doc = {
 };
 
 test('arrows are routed between the edges of their shapes', () => {
-  const ab = route(doc.elements)[2];
+  const ab = resolve(doc)[2];
   assert.equal(ab.y, 25); // vertical centers
   assert.equal(ab.x, 106); // right edge of a + gap
   assert.equal(ab.x + ab.points[1][0], 294); // left edge of b - gap
@@ -63,4 +63,73 @@ test('dark mode, shadows, fonts and per-text settings', () => {
   assert.doesNotMatch(svg, /g-arrow-label-bg/);
   assert.doesNotMatch(toSvg(d, { shadow: false }), /feDropShadow/);
   assert.deepEqual(styleWarnings({ shadow: { spread: 2 }, colour: 'red', tones: { x: { border: 1 } } }).length, 3);
+});
+
+test('groups lay out their children, boxes fit their text, notes follow, legend is drawn', () => {
+  const d = {
+    legend: { shared: 'Shared rules' },
+    elements: [
+      { id: 'g', type: 'group', x: 100, y: 50, label: { title: 'Layer' }, children: ['a', 'b'], layout: { direction: 'row', gap: 30 } },
+      { id: 'a', type: 'rectangle', label: { title: 'Kate', lines: ['- likes tea', '', '- owns the repo'] }, tags: ['user:kate', 'kind:rule'] },
+      { id: 'b', type: 'rectangle', label: { text: 'B' } },
+      { id: 'n', type: 'note', attachTo: 'a', side: 'bottom', text: 'pinned' },
+    ],
+  };
+  const r = Object.fromEntries(resolve(d).map((e) => [e.id, e]));
+  assert.equal(r.a.x, 100 + 20); // group x + padding
+  assert.equal(r.b.x, r.a.x + r.a.width + 30); // row with gap
+  assert.ok(r.a.height > 60); // grew to fit title, 3 lines and tags
+  assert.ok(r.g.width >= r.b.x + r.b.width - r.g.x); // group wraps its children
+  assert.equal(r.n.y, r.a.y + r.a.height + 40); // note under its shape
+  assert.equal(r.n.x, r.a.x);
+  assert.ok(r._legend && r._legend.y > r.n.y);
+  const svg = toSvg(d);
+  assert.ok(svg.indexOf('g-group-box') < svg.indexOf('data-id="a"')); // groups draw behind
+  assert.match(svg, /user:kate/);
+  assert.match(svg, /\u00a0/); // the blank line is kept
+  assert.match(svg, /Shared rules/);
+});
+
+test('z order, arrow sides and routing around boxes', () => {
+  const d = { elements: [
+    { id: 'top', type: 'rectangle', x: 0, y: 0, width: 100, height: 50, z: 2 },
+    { id: 'under', type: 'rectangle', x: 20, y: 20, width: 100, height: 50 },
+    { id: 'a', type: 'rectangle', x: 0, y: 200, width: 100, height: 50 },
+    { id: 'wall', type: 'rectangle', x: 200, y: 200, width: 100, height: 50 },
+    { id: 'b', type: 'rectangle', x: 400, y: 200, width: 100, height: 50 },
+    { id: 'ab', type: 'arrow', start: { id: 'a' }, end: { id: 'b' } },
+    { id: 'side', type: 'arrow', start: { id: 'a' }, end: { id: 'b' }, fromSide: 'bottom', toSide: 'bottom' },
+  ] };
+  const svg = toSvg(d);
+  assert.ok(svg.indexOf('data-id="under"') < svg.indexOf('data-id="top"')); // higher z on top
+  const r = Object.fromEntries(resolve(d).map((e) => [e.id, e]));
+  assert.ok(r.ab.points.length > 2); // went around "wall" instead of through it
+  assert.equal(r.side.y, 200 + 50 + 6); // leaves from the bottom
+  assert.equal(r.side.points.at(-1)[1], 0); // and enters b's bottom (same height)
+  const w = layoutWarnings(d);
+  assert.match(w.join('\n'), /"top" and "under" overlap/);
+  const spill = layoutWarnings({ elements: [{ id: 's', type: 'rectangle', x: 0, y: 0, width: 60, height: 30, label: { text: 'far too much text for this' } }] });
+  assert.match(spill.join('\n'), /"s": text spills out/);
+});
+
+test('content blocks: markdown-lite, chips, chat, list, code; bad blocks are reported', async () => {
+  const { elementWarnings } = await import('../lib/edit.js');
+  const e = { id: 'k', type: 'rectangle', x: 0, y: 0, content: [
+    { type: 'title', text: 'Kate' },
+    { type: 'chips', items: ['user:kate'] },
+    { type: 'chat', turns: [{ who: 'Kate', text: 'I am **interviewing**' }, { who: 'Agent', text: 'Noted' }] },
+    { type: 'list', items: ['one', 'two'], ordered: true },
+    { type: 'code', text: 'a: 1' },
+  ] };
+  const svg = toSvg({ elements: [e] });
+  assert.match(svg, /<tspan font-weight="700">interviewing<\/tspan>/);
+  assert.match(svg, /g-chat-bubble/);
+  assert.match(svg, />user:kate</);
+  assert.match(svg, />2\.</);
+  assert.match(svg, /g-code/);
+  const big = Object.fromEntries(resolve({ elements: [e] }).map((x) => [x.id, x])).k;
+  assert.ok(big.height > 200); // grew to fit all blocks
+  const w = elementWarnings([{ id: 'x', type: 'rectangle', content: [{ type: 'html', html: '<b>' }, { type: 'chat', who: 'k' }] }], [], 'default');
+  assert.match(w.join('\n'), /type "html" isn't drawn/);
+  assert.match(w.join('\n'), /\(chat\) "who" isn't drawn/);
 });

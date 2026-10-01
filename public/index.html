@@ -108,12 +108,12 @@
           </div>
         </div>
         <div id="toast" hidden></div>
-        <div id="hint">Drag a box to move it · drag empty space to copy that area for your agent · double-click to rename · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
+        <div id="hint">Drag a box to move it · drag empty space to copy that area for your agent · double-click to rename · [ ] send back / bring front · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
       </div>
     </main>
   </div>
   <script type="module">
-    import { drawContent, toSvg, route, bounds, boundsOf, isRouted, labelOf, SAMPLE } from '/lib/render.js';
+    import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE } from '/lib/render.js';
     import { resolveStyle } from '/lib/styles.js';
     import { diffDocs } from '/lib/edit.js';
 
@@ -136,6 +136,9 @@
     let styles = {}, styleId = 'default', stylesText = '', S = resolveStyle();
     let theme = store.get('giotto-theme') || 'auto';
     const el = (id) => doc?.elements.find((e) => e.id === id);
+    // Where everything ends up (groups, layouts, auto sizes, notes, arrows): computed, never stored.
+    const placed = () => (doc ? resolve(doc, S) : []);
+    const placedEl = (id) => placed().find((e) => e.id === id);
 
     // ---- drawing ----
 
@@ -146,7 +149,7 @@
       svg.style.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.2px, transparent 1.2px)` : 'none';
       svg.style.backgroundSize = `${20 * view.zoom}px ${20 * view.zoom}px`;
       svg.style.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
-      let out = doc ? drawContent(doc, S, { selected: [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom }) : '';
+      let out = doc ? drawContent(doc, S, { selected: [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, resolved: placed() }) : '';
       if (drag?.type === 'area') {
         const a = area(drag);
         out += `<rect x="${a.x}" y="${a.y}" width="${a.w}" height="${a.h}" rx="4" fill="#e3a92b" fill-opacity="0.12" stroke="#e3a92b" stroke-width="${1.5 / view.zoom}" stroke-dasharray="${6 / view.zoom} ${4 / view.zoom}"/>`;
@@ -156,14 +159,14 @@
 
     function fit() {
       const r = svg.getBoundingClientRect();
-      const b = boundsOf(route(doc?.elements || []), S);
+      const b = boundsOf(placed(), S);
       if (!b.w && !b.h) return (view = { x: -40, y: -40, zoom: 1 });
       const zoom = Math.min(1.5, (r.width - 80) / b.w, (r.height - 80) / b.h);
       view = { zoom, x: b.x + b.w / 2 - r.width / zoom / 2, y: b.y + b.h / 2 - r.height / zoom / 2 };
     }
 
     function centerOn(id) {
-      const e = route(doc.elements).find((x) => x.id === id);
+      const e = placedEl(id);
       if (!e) return;
       const r = svg.getBoundingClientRect(), b = bounds(e, S);
       view.x = b.x + b.w / 2 - r.width / view.zoom / 2;
@@ -196,8 +199,11 @@
     }
 
     // A version of the file arrived: from the agent, another tab, a poll, or our own save coming back.
+    let waiting = null; // a version that arrived mid-drag
     function show(text, own = false) {
       if (text === base) return;
+      // Don't yank things out from under a drag: apply it when the drag ends (the save merges anyway).
+      if (drag && drag.type !== 'pan' && drag.type !== 'area') return void (waiting = text);
       const next = JSON.parse(text);
       next.elements ||= [];
       const foreign = !own && !(doc && serialize(next) === serialize(doc));
@@ -206,7 +212,6 @@
       doc = next;
       selected = new Set([...selected].filter(el));
       if (document.activeElement !== $('title')) $('title').value = doc.title || current;
-      if (foreign && drag?.type === 'move') drag = null; // what we were dragging may have changed under us
       runSearch();
       if (foreign) status(`updated ${new Date().toLocaleTimeString()}`);
       render();
@@ -270,8 +275,21 @@
       const r = svg.getBoundingClientRect();
       return { x: view.x + (ev.clientX - r.left) / view.zoom, y: view.y + (ev.clientY - r.top) / view.zoom };
     };
-    // Arrows tied to shapes follow them, so only free-standing things move on their own.
-    const movable = (e) => e && !isRouted(e);
+    // Things whose place is computed don't move on their own: arrows tied to shapes, pinned notes,
+    // children of a layout group. Dragging a free group moves what's in it; a layout group moves itself.
+    function movers(ids) {
+      const parent = parentsOf(doc.elements);
+      const out = new Set();
+      const add = (id) => {
+        const e = el(id);
+        if (!e || isRouted(e) || (e.type === 'note' && e.attachTo)) return;
+        if (e.type === 'group' && !e.layout) return (e.children || []).forEach(add);
+        if (el(parent[id])?.layout) return add(parent[id]);
+        out.add(id);
+      };
+      ids.forEach(add);
+      return [...out].map(el);
+    }
 
     let lastDown = {};
     svg.addEventListener('pointerdown', (ev) => {
@@ -294,12 +312,13 @@
       }
       lastDown = { id, at: now };
       if (ev.target.closest('[data-handle]')) {
-        const e = el([...selected][0]);
-        drag = { type: 'resize', id: e.id, start: p, w: e.width ?? 140, h: e.height ?? 60 };
+        const e = placedEl([...selected][0]);
+        drag = { type: 'resize', id: e.id, start: p, w: e.width, h: e.height };
       } else if (id) {
         if (ev.shiftKey) selected.has(id) ? selected.delete(id) : selected.add(id);
         else if (!selected.has(id)) selected = new Set([id]);
-        const orig = new Map([...selected].map(el).filter(movable).map((e) => [e.id, { x: e.x, y: e.y }]));
+        const at = Object.fromEntries(placed().map((e) => [e.id, e]));
+        const orig = new Map(movers([...selected]).map((e) => [e.id, { x: at[e.id]?.x ?? e.x ?? 0, y: at[e.id]?.y ?? e.y ?? 0 }]));
         drag = { type: 'move', start: p, orig };
         selectionChanged();
       } else {
@@ -334,10 +353,17 @@
     });
 
     const endDrag = () => {
-      if (drag?.type === 'area') copyArea(area(drag));
-      else if (drag && drag.type !== 'pan') commit();
+      const was = drag;
       drag = null;
       svg.classList.remove('panning');
+      if (was?.type === 'area') copyArea(area(was));
+      else if (was && was.type !== 'pan') {
+        const later = waiting;
+        waiting = null;
+        // Nothing changed by the drag: just catch up with what arrived meanwhile.
+        if (!Object.keys(diffDocs(JSON.parse(base), doc)).length) return later && show(later);
+        commit(); // the server merges our move into the newest file and sends it back
+      }
     };
     svg.addEventListener('pointerup', endDrag);
     svg.addEventListener('pointercancel', endDrag);
@@ -369,7 +395,8 @@
       const lines = [`Giotto diagram "${doc.title || current}" (id: ${current}), area x ${n(r.x)}..${n(r.x + r.w)}, y ${n(r.y)}..${n(r.y + r.h)}:`];
       if (!items.length) lines.push('- empty space');
       for (const e of items) {
-        const what = `- ${e.type}${labelOf(e) ? ` "${labelOf(e).replace(/\n/g, ' ')}"` : ''} (id: ${e.id})`;
+        const tags = e.tags?.length ? ` [tags: ${e.tags.join(', ')}]` : '';
+        const what = `- ${e.type}${labelOf(e) ? ` "${labelOf(e).replace(/\n/g, ' ')}"` : ''} (id: ${e.id})${tags}`;
         if (isRouted(e)) lines.push(`${what} from ${e.start.id} to ${e.end.id}`);
         else {
           const b = bounds(e, S);
@@ -381,7 +408,7 @@
 
     async function copyArea(r) {
       if (r.w * view.zoom < 5 && r.h * view.zoom < 5) return; // just a click on empty space
-      const inside = route(doc.elements).filter((e) => {
+      const inside = placed().filter((e) => e.type !== 'legend').filter((e) => {
         const b = bounds(e, S);
         return b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h;
       });
@@ -408,7 +435,7 @@
 
     let editing = null;
     function startEdit(id) {
-      const e = route(doc.elements).find((x) => x.id === id);
+      const e = placedEl(id);
       if (!e) return;
       const b = bounds(e, S), r = svg.getBoundingClientRect(), s = $('stage').getBoundingClientRect();
       const w = Math.max(140, b.w * view.zoom);
@@ -432,9 +459,13 @@
       editing = null;
       $('edit').style.display = 'none';
       if (!keep || !e) return;
-      if (e.type === 'text') { if (text) e.text = text; }
+      const block = e.content?.find((b) => b.type === 'title' || b.type === 'text');
+      if (block) { if (text) block.text = text; }
+      else if (e.type === 'text' || e.type === 'note') { if (text) e.text = text; }
+      else if (e.label?.title !== undefined) e.label = { ...e.label, title: text };
       else if (text) e.label = { ...e.label, text };
-      else delete e.label;
+      else if (!e.label?.lines) delete e.label;
+      else delete e.label.text;
       commit();
       render();
     }
@@ -448,7 +479,7 @@
 
     function runSearch() {
       const q = $('search').value.trim().toLowerCase();
-      matches = q && doc ? doc.elements.filter((e) => labelOf(e).toLowerCase().includes(q)).map((e) => e.id) : [];
+      matches = q && doc ? doc.elements.filter((e) => searchText(e).toLowerCase().includes(q)).map((e) => e.id) : [];
       matchAt = Math.min(matchAt, Math.max(0, matches.length - 1));
       if (q) status(matches.length ? `${matchAt + 1} of ${matches.length}` : 'no matches');
     }
@@ -496,6 +527,13 @@
         const patch = diffDocs(doc, target);
         doc = target;
         send(patch);
+        render();
+      } else if (!typing && (ev.key === '[' || ev.key === ']') && selected.size) {
+        // Send to back / bring to front.
+        const zs = doc.elements.map((e) => e.z ?? 0);
+        const z = ev.key === ']' ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
+        for (const id of selected) el(id).z = z;
+        commit();
         render();
       } else if (!typing && ev.key === 'Escape' && selected.size) {
         selected.clear();
@@ -620,6 +658,9 @@
     await refreshList();
     const wanted = location.hash.slice(1);
     await open(diagrams.some((d) => d.id === wanted) ? wanted : diagrams[0]?.id);
+
+    // Links the agent hands out (…/#<id>) open that diagram even in a tab that's already open.
+    addEventListener('hashchange', () => open(location.hash.slice(1)));
 
     async function check() {
       try {
