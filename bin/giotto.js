@@ -9,7 +9,7 @@ import readline from 'node:readline';
 import { execFileSync, spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, validId } from '../lib/edit.js';
+import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, newId, validId } from '../lib/edit.js';
 import { toSvg, layoutWarnings, SAMPLE } from '../lib/render.js';
 import { timeline, frameAt, sceneWarnings, forExport } from '../lib/scenes.js';
 import { toAnimatedSvg } from '../lib/animate.js';
@@ -107,7 +107,7 @@ async function listDiagrams() {
 
 async function createDiagram(title, elements = [], legend, extra = {}) {
   const taken = new Set((await fs.readdir(dir)).map((n) => n.replace(/\.json$/, '')));
-  const id = slugify(title, taken);
+  const id = newId(taken);
   const doc = applyEdit({ title, ...extra, elements: [], selectedIds: [] }, { add: elements, legend });
   const text = JSON.stringify(doc, null, 2) + '\n';
   await fs.writeFile(fileOf(id), text, { flag: 'wx' });
@@ -221,6 +221,13 @@ function serve() {
         await saveText(id, text, 'canvas');
         broadcast(id, text);
         return send(200, { text });
+      }
+      // Only the user deletes diagrams, from the canvas (agents have no tool for it). The history stays in .history/<id>.
+      if (route === 'DELETE /api/doc') {
+        await fs.unlink(fileOf(id));
+        known.delete(id);
+        push({ type: 'deleted', id });
+        return send(200, { ok: true });
       }
       // History: list versions, read one, restore one (as a new version).
       if (route === 'GET /api/history') return send(200, { versions: await history.summary(id) });
@@ -343,7 +350,7 @@ Also the way to preview a style before saving or switching to it: pass the style
         scene: { description: 'The one scene to play (default all), or with beat / png the scene to show a moment of. By number (1 = first) or label.', anyOf: [{ type: 'number' }, { type: 'string' }] },
         speed: { type: 'number', description: 'svg/mp4 with scenes: pace multiplier, e.g. 0.5, 1 (default), 2.' },
         beat: { type: 'number', description: 'A still of the end of this beat of "scene" (1 = first) instead of the animation.' },
-        path: { type: 'string', description: 'Where to write it. Default: ./<id>.<format> in the current directory.' },
+        path: { type: 'string', description: 'Where to write it. Default: ./<title-as-file-name>.<format> in the current directory.' },
         style: { description: 'A style id, or a full style object to preview without saving it. Default: the active style.', anyOf: [{ type: 'string' }, { type: 'object' }] },
         dark: { type: 'boolean', description: "Use the style's dark version." },
       },
@@ -458,7 +465,7 @@ async function callTool(name, a = {}) {
     const svg = toSvg(doc, style, { dark, frame, sceneIndex });
     const png = await toPng(svg);
     const ext = { svg: 'svg', png: 'png', 'animated-svg': 'svg', mp4: 'mp4' }[format];
-    const out = path.resolve(a.path || `${a.id || 'sample'}.${ext}`);
+    const out = path.resolve(a.path || `${a.id ? slugify(doc.title || a.id, new Set()) : 'sample'}.${ext}`);
     let made = '';
     if (format === 'mp4') {
       const { toMp4 } = await import('../lib/video.js');

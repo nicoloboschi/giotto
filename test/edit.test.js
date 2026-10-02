@@ -30,13 +30,16 @@ test('bad ids are rejected', () => {
   assert.throws(() => applyEdit(doc, { add: [{ id: 'x', type: 'arrow', end: { id: 'nope' } }] }), /missing element/);
 });
 
-import { slugify, validId } from '../lib/edit.js';
+import { slugify, validId, newId } from '../lib/edit.js';
 
 test('ids are safe file names', () => {
   assert.equal(slugify('Auth Flow!', new Set()), 'auth-flow');
   assert.equal(slugify('Auth Flow', new Set(['auth-flow', 'auth-flow-2'])), 'auth-flow-3');
   assert.equal(slugify('???', new Set()), 'diagram');
   assert.equal(validId('auth-flow'), true);
+  const id = newId(new Set());
+  assert.equal(validId(id), true);
+  assert.notEqual(id, newId(new Set([id])));
   assert.equal(validId('../etc/passwd'), false);
   assert.equal(validId('Upper'), false);
 });

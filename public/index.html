@@ -16,9 +16,12 @@
     .brand { display: flex; align-items: center; gap: 8px; height: 49px; padding: 0 14px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 14px; }
     .brand svg { color: var(--fg); }
     #list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px; }
-    #list button { display: block; width: 100%; text-align: left; border: 0; border-radius: 6px; padding: 7px 10px; background: transparent; cursor: pointer; }
+    #list button { position: relative; display: block; width: 100%; text-align: left; border: 0; border-radius: 6px; padding: 7px 10px; background: transparent; cursor: pointer; }
     #list button:hover { background: var(--hover); }
     #list button.on { background: var(--active); }
+    #list .del { position: absolute; top: 6px; right: 6px; padding: 0 6px; border-radius: 4px; color: var(--muted); visibility: hidden; }
+    #list button:hover .del, #list .del:focus { visibility: visible; }
+    #list .del:hover { background: var(--hover); color: inherit; }
     #list .t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11.5px; }
 
@@ -173,7 +176,7 @@
   <script type="module">
     import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE } from '/lib/render.js';
     import { resolveStyle } from '/lib/styles.js';
-    import { diffDocs } from '/lib/edit.js';
+    import { diffDocs, slugify } from '/lib/edit.js';
     import { timeline, frameAt } from '/lib/scenes.js';
 
     const $ = (id) => document.getElementById(id);
@@ -333,13 +336,24 @@
       $('list').replaceChildren(...rows.map((d) => {
         const b = document.createElement('button');
         b.className = d.id === current ? 'on' : '';
-        b.innerHTML = '<span class="t"></span><small></small>';
+        b.innerHTML = '<span class="t"></span><small></small><span class="del" role="button" tabindex="0" title="Delete diagram" aria-label="Delete diagram">×</span>';
         b.querySelector('.t').textContent = d.title;
         b.querySelector('small').textContent = d.when;
         b.onclick = () => open(d.id);
+        b.querySelector('.del').onclick = (ev) => {
+          ev.stopPropagation();
+          remove(d);
+        };
         return b;
       }));
       $('empty').hidden = diagrams.length > 0;
+    }
+
+    async function remove(d) {
+      if (!confirm(`Delete "${d.title}"? This can't be undone from the canvas.`)) return;
+      const res = await fetch(`/api/doc?id=${d.id}`, { method: 'DELETE' });
+      if (!res.ok) return status(`couldn't delete: ${(await res.json()).error}`);
+      check();
     }
 
     $('title').addEventListener('change', () => {
@@ -763,6 +777,7 @@
     // PNG comes from the server, drawn from this same SVG, exactly like the agent's export.
     const toPng = async (svgText) => (await fetch('/api/png', { method: 'POST', body: JSON.stringify({ svg: svgText }) })).blob();
 
+    const fileName = () => slugify(doc?.title || current, new Set());
     function download(name, data, type) {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
@@ -777,11 +792,11 @@
       // A diagram with scenes exports as an animated SVG (all scenes, at the player's speed), like the docs figures.
       if (f === 'svg' && doc.scenes?.length) {
         const res = await fetch(`/api/animation?id=${current}`, { method: 'POST', body: JSON.stringify({ format: 'animated-svg', speed: player.speed, dark: isDark() }) });
-        return download(`${current}.svg`, await res.blob());
+        return download(`${fileName()}.svg`, await res.blob());
       }
-      if (f === 'svg') download(`${current}.svg`, toSvg(doc, S), 'image/svg+xml');
-      if (f === 'png') download(`${current}.png`, await toPng(toSvg(doc, S)));
-      if (f === 'json') download(`${current}.json`, base, 'application/json');
+      if (f === 'svg') download(`${fileName()}.svg`, toSvg(doc, S), 'image/svg+xml');
+      if (f === 'png') download(`${fileName()}.png`, await toPng(toSvg(doc, S)));
+      if (f === 'json') download(`${fileName()}.json`, base, 'application/json');
     }));
 
     // ---- scenes: play a diagram's stories (tabs, play/pause, 1x/2x) ----
@@ -884,7 +899,7 @@
 
     $('anim-go').onclick = async () => {
       const scene = $('anim-scene').value, id = current;
-      const name = `${id}${scene === 'all' ? '' : `-scene${scene}`}${anim.speed === '1' ? '' : `-${anim.speed}x`}`;
+      const name = `${fileName()}${scene === 'all' ? '' : `-scene${scene}`}${anim.speed === '1' ? '' : `-${anim.speed}x`}`;
       const body = JSON.stringify({ format: anim.format, scene: scene === 'all' ? undefined : +scene, speed: +anim.speed, dark: isDark() });
       $('anim-go').disabled = true;
       try {
@@ -1015,6 +1030,11 @@
     async function check() {
       try {
         await refreshList();
+        // The open diagram was deleted (here, in another tab, or its file removed): go to the next one.
+        if (current && !diagrams.some((d) => d.id === current)) {
+          if (!diagrams.length) return location.reload(); // nothing left: start empty
+          current = null;
+        }
         if (!current && diagrams.length) await open(diagrams[0].id);
         if (current && !drag) {
           const res = await fetch(`/api/doc?id=${current}`);
@@ -1032,7 +1052,7 @@
     events.onmessage = async (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.type === 'hello' && msg.version !== version) location.reload(); // Giotto was updated
-      if (msg.type === 'styles') check();
+      if (msg.type === 'styles' || msg.type === 'deleted') check();
       if (msg.type === 'doc') {
         if (msg.id === current) show(msg.text);
         // The agent is working on another diagram: follow it, unless the user is busy here.

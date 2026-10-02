@@ -36,7 +36,7 @@ Then ask your agent for a diagram. The first time, it sets Giotto up for you and
 - **Scenes:** diagrams can tell a story: packets travel along arrows, boxes fill in, a narration plays. Play them on the canvas, or export an animated SVG (plays on GitHub) or an MP4.
 - **Export** to SVG or PNG. The agent gets the picture back, along with warnings about overlaps or text that doesn't fit.
 
-Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete them.
+Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete them; you can, with the × next to each one in the sidebar. New diagrams get a random id, so renaming one never breaks its link.
 
 ## MCP tools
 
