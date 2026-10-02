@@ -2,6 +2,8 @@
 
 Diagrams your coding agent draws for you, live. The agent (Claude Code, Codex, anything that speaks MCP) already knows your repo; Giotto gives it a canvas. You ask in your chat, the agent draws, you watch it in your browser.
 
+**[Try the canvas in your browser →](https://nicoloboschi.github.io/giotto/)**
+
 ![How Giotto works](docs/how-it-works.svg)
 
 ![Rich boxes: chat, chips, lists and code, laid out by a group](docs/example.svg)
@@ -51,6 +53,8 @@ Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete t
 | `diagram_history`, `restore_version` | Every change is a version; restore one as the newest |
 
 ## Develop
+
+The [live demo](https://nicoloboschi.github.io/giotto/) is this same canvas: `node site/build.mjs` builds it into `_site/`, with `site/demo.js` answering the canvas's API calls from the browser's storage. It deploys on every push to `main`.
 
 ```sh
 node bin/giotto.js      # canvas

@@ -188,11 +188,11 @@
     </main>
   </div>
   <script type="module">
-    import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE } from '/lib/render.js';
-    import { resolveStyle } from '/lib/styles.js';
-    import { diffDocs, slugify } from '/lib/edit.js';
-    import { timeline, frameAt } from '/lib/scenes.js';
-    import { pageHtml, pageBox } from '/lib/page.js';
+    import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE } from './lib/render.js';
+    import { resolveStyle } from './lib/styles.js';
+    import { diffDocs, slugify } from './lib/edit.js';
+    import { timeline, frameAt } from './lib/scenes.js';
+    import { pageHtml, pageBox } from './lib/page.js';
 
     const $ = (id) => document.getElementById(id);
     const svg = $('canvas');
