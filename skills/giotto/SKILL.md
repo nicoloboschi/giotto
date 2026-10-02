@@ -27,7 +27,16 @@ It needs git and Node.js 20+. It clones Giotto into `~/.giotto/app`, adds a `gio
 
 - `diagram_history(id)` / `restore_version(id, v)`: every change (yours, the user's on the canvas, a direct file edit) is a numbered version; the server picks the numbers and edit results say which one they made ("saved as v12"). Restoring makes an old version the newest; nothing is lost.
 
-Every change returns what was stored plus **warnings**: overlapping shapes, text spilling out of its box, fields, blocks or tones that aren't drawn. Fix them before you finish. Diagrams can't be deleted.
+Every change returns what was stored plus **warnings**: overlapping shapes, text spilling out of its box, fields, blocks or tones that aren't drawn. Fix them before you finish. Agents can't delete diagrams (the user can, on the canvas).
+
+## Pages: images in HTML
+
+When the picture isn't boxes and arrows (a results card, a poster, a bar chart, a slide), make a **page** instead: you write the HTML, Giotto shows it live, versions it, and exports it.
+- `create_page(title, html, width?, height?)`: `html` is the body's content plus your own `<style>`. Static HTML + CSS (inline SVG is fine), no scripts. The page is exactly width × height px (default 1200 × 1500); anything outside is cut off.
+- `edit_page(id, html? | replace?: [{find, with}], title?, width?, height?)`: each `find` must appear exactly once.
+- Colors and fonts come from the active style as CSS variables: `--g-background`, `--g-text`, `--g-muted`, `--g-accent`, `--g-font`, and `--g-tone-<name>` / `-fill` / `-text`. Use them, so pages match the diagrams and dark mode works. Other fonts: `@import` a Google Fonts URL in your `<style>`.
+- Check it: `export_diagram(id, format: png)` returns the picture (needs Chrome). `format: html` writes one self-contained file.
+- Requested changes on a page list the text inside each area (`<h1> "Same memories…" at x 80, y 187`).
 
 **Requested changes from the user:** on the canvas the user draws areas, writes what should change in each, and pastes you one snippet starting with `Requested changes (N) for Giotto diagram "X" (id: x):`. Each numbered item is one request, with its area (`Area x 0..200, y 0..150`) and the elements inside it (ids, positions). Do every item: the ids are what they mean, and an empty area's coordinates say where to put new things.
 

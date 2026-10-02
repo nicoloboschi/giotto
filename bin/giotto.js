@@ -14,6 +14,7 @@ import { toSvg, layoutWarnings, SAMPLE } from '../lib/render.js';
 import { timeline, frameAt, sceneWarnings, forExport } from '../lib/scenes.js';
 import { toAnimatedSvg } from '../lib/animate.js';
 import { historyStore } from '../lib/history.js';
+import { PAGE_FORMAT, PAGE_SIZE, pageBox, pageHtml, pageWarnings } from '../lib/page.js';
 import { DEFAULT_STYLE, STYLE_FORMAT, resolveStyle, styleWarnings } from '../lib/styles.js';
 
 const { values: opts, positionals } = parseArgs({
@@ -57,7 +58,7 @@ if (positionals[0] === 'update') {
 }
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
-  .update(['bin/giotto.js', 'public/app.html', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/history.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
+  .update(['bin/giotto.js', 'public/app.html', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/history.js', 'lib/page.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
   .digest('hex')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
@@ -96,7 +97,7 @@ async function listDiagrams() {
       try {
         const [text, stat] = await Promise.all([readText(id), fs.stat(fileOf(id))]);
         const doc = JSON.parse(text);
-        return { id, title: doc.title || id, elements: doc.elements?.length || 0, updated: stat.mtime.toISOString() };
+        return { id, title: doc.title || id, kind: doc.html !== undefined ? 'page' : 'diagram', elements: doc.elements?.length || 0, updated: stat.mtime.toISOString() };
       } catch {
         return null; // half-written or broken file: skip it
       }
@@ -197,7 +198,7 @@ function serve() {
       if (route === 'GET /') {
         return send(200, await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8'), 'text/html; charset=utf-8');
       }
-      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js', 'GET /lib/blocks.js', 'GET /lib/scenes.js'].includes(route)) {
+      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js', 'GET /lib/blocks.js', 'GET /lib/scenes.js', 'GET /lib/page.js'].includes(route)) {
         return send(200, await fs.readFile(path.join(root, pathname), 'utf8'), 'text/javascript');
       }
       if (route === 'GET /api/styles') return send(200, { current: await currentStyle(), styles: await listStyles() });
@@ -275,6 +276,11 @@ function serve() {
         jobs.delete(searchParams.get('job'));
         return fs.rm(j.file, { force: true });
       }
+      if (route === 'GET /api/page.png') {
+        const png = await pagePng(await readDoc(id), await getStyle(await currentStyle()), searchParams.get('dark') === '1');
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+        return res.end(png);
+      }
       if (route === 'POST /api/png') {
         res.writeHead(200, { 'content-type': 'image/png' });
         return res.end(await toPng((await body()).svg));
@@ -299,7 +305,7 @@ const elementsArg = { type: 'array', items: { type: 'object' } };
 const TOOLS = [
   {
     name: 'list_diagrams',
-    description: 'List all diagrams (newest first): id, title, element count, last update.',
+    description: 'List all diagrams and pages (newest first): id, title, kind (diagram or page), element count, last update.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true },
   },
@@ -334,6 +340,26 @@ The user sees the change live. ${FORMAT}`,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
   {
+    name: 'create_page',
+    description: `Create a page: an image you write in HTML, when a diagram isn't the right shape (a results card, a poster, a chart, a slide). For boxes and arrows, use create_diagram instead: it lays them out for you. ${PAGE_FORMAT}`,
+    inputSchema: {
+      type: 'object',
+      properties: { title: { type: 'string' }, html: { type: 'string' }, width: { type: 'number', description: `px, default ${PAGE_SIZE.width}` }, height: { type: 'number', description: `px, default ${PAGE_SIZE.height}` } },
+      required: ['title', 'html'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: 'edit_page',
+    description: `Change a page. Read it with get_diagram first. Either replace the whole "html", or make small changes with "replace": [{"find", "with"}], where each "find" must appear exactly once in the page's html. Also: title, width, height. The user sees the change live. ${PAGE_FORMAT}`,
+    inputSchema: {
+      type: 'object',
+      properties: { ...idArg, title: { type: 'string' }, html: { type: 'string' }, replace: { type: 'array', items: { type: 'object', properties: { find: { type: 'string' }, with: { type: 'string' } }, required: ['find', 'with'] } }, width: { type: 'number' }, height: { type: 'number' } },
+      required: ['id'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  },
+  {
     name: 'export_diagram',
     description: `Write a diagram as a file and return the path, with a picture attached so you can check it.
 - svg: for a diagram with scenes, the scenes playing in a loop in one self-contained SVG (plays in GitHub READMEs, PRs, docs); otherwise the still diagram.
@@ -341,12 +367,13 @@ The user sees the change live. ${FORMAT}`,
 - png: the still diagram.
 For svg and mp4: "scene" picks one scene to play (default: all, in order) and "speed" sets the pace (2 = twice as fast).
 For a still of one moment (svg or png): "scene" and "beat"; you get the end of that beat, with what it shows, lights and narrates.
-Also the way to preview a style before saving or switching to it: pass the style itself as an object (and leave out id to draw a sample diagram), then look at the picture.`,
+Also the way to preview a style before saving or switching to it: pass the style itself as an object (and leave out id to draw a sample diagram), then look at the picture.
+Pages export as png (drawn by Chrome, which must be installed) or html (one self-contained file).`,
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Diagram id. Leave out to draw a sample diagram (for style previews).' },
-        format: { type: 'string', enum: ['svg', 'png', 'mp4'], default: 'svg' },
+        format: { type: 'string', enum: ['svg', 'png', 'mp4', 'html'], default: 'svg' },
         scene: { description: 'The one scene to play (default all), or with beat / png the scene to show a moment of. By number (1 = first) or label.', anyOf: [{ type: 'number' }, { type: 'string' }] },
         speed: { type: 'number', description: 'svg/mp4 with scenes: pace multiplier, e.g. 0.5, 1 (default), 2.' },
         beat: { type: 'number', description: 'A still of the end of this beat of "scene" (1 = first) instead of the animation.' },
@@ -412,6 +439,82 @@ async function toPng(svg) {
   return new Resvg(svg, { fitTo: { mode: 'zoom', value: 2 }, font: { loadSystemFonts: true } }).render().asPng();
 }
 
+// Pages are HTML, so their PNG comes from a headless Chrome. First choice: chrome-headless-shell, if Playwright or
+// Puppeteer downloaded one (it starts in ~3s; full Chrome takes ~13s on a Mac). Then an installed Chrome.
+// GIOTTO_CHROME points at any other.
+// ponytail: one Chrome per export; keep one running and talk to it over DevTools if exports need to be faster.
+async function chromes() {
+  const shells = [];
+  const caches = [path.join(os.homedir(), 'Library/Caches/ms-playwright'), path.join(os.homedir(), '.cache/ms-playwright'), path.join(os.homedir(), '.cache/puppeteer/chrome-headless-shell')];
+  for (const cache of caches) {
+    for (const v of (await fs.readdir(cache).catch(() => [])).filter((n) => n.startsWith('chromium_headless_shell') || /^mac|^linux/.test(n)).sort().reverse()) {
+      for (const os_ of await fs.readdir(path.join(cache, v)).catch(() => [])) shells.push(path.join(cache, v, os_, 'chrome-headless-shell'));
+    }
+  }
+  const found = [];
+  for (const f of shells) if (await fs.access(f).then(() => true, () => false)) found.push({ bin: f, flags: [] });
+  return [
+    ...(process.env.GIOTTO_CHROME ? [{ bin: process.env.GIOTTO_CHROME, flags: ['--headless'] }] : []),
+    ...found,
+    ...['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', 'google-chrome', 'chromium', 'chromium-browser'].map((bin) => ({ bin, flags: ['--headless'] })),
+  ];
+}
+// Chrome writes the screenshot but doesn't always quit after it (macOS): wait for the file, then stop it.
+function screenshot(bin, args, file) {
+  return new Promise((resolve) => {
+    const chrome = spawn(bin, args, { stdio: 'ignore' });
+    let last = -1, timer, giveUp;
+    const done = (png) => {
+      clearInterval(timer);
+      clearTimeout(giveUp);
+      chrome.kill();
+      resolve(png);
+    };
+    chrome.on('error', () => done(null)); // not installed here
+    timer = setInterval(async () => {
+      const size = (await fs.stat(file).catch(() => null))?.size ?? -1;
+      if (size > 0 && size === last) return done(await fs.readFile(file)); // written and no longer growing
+      last = size;
+    }, 150);
+    giveUp = setTimeout(() => done(null), 30000);
+  });
+}
+
+async function pagePng(doc, style, dark) {
+  const { w, total: h } = pageBox(doc, style, dark); // with the style's header and footer
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'giotto-page-'));
+  try {
+    await fs.writeFile(path.join(tmp, 'page.html'), pageHtml(doc, style, { dark }));
+    const args = ['--disable-gpu', '--hide-scrollbars', '--no-first-run', `--user-data-dir=${tmp}`, '--force-device-scale-factor=2',
+      `--window-size=${w},${h}`, '--virtual-time-budget=5000', `--screenshot=${path.join(tmp, 'page.png')}`, `file://${path.join(tmp, 'page.html')}`];
+    for (const { bin, flags } of await chromes()) {
+      const png = await screenshot(bin, [...flags, ...args], path.join(tmp, 'page.png'));
+      if (png) return png;
+    }
+    throw new Error('Exporting a page as PNG needs Chrome or Chromium. Install one, or set GIOTTO_CHROME to its path.');
+  } finally {
+    fs.rm(tmp, { recursive: true, force: true });
+  }
+}
+
+const withPageWarnings = (text, html) => {
+  const w = pageWarnings(html);
+  return `${text}\n\n${w.length ? `Warnings:\n- ${w.join('\n- ')}` : 'No warnings.'}`;
+};
+
+async function exportPage(a, doc) {
+  const format = a.format === 'svg' || !a.format ? 'png' : a.format;
+  if (!['png', 'html'].includes(format)) throw new Error('A page exports as png or html.');
+  const styleName = typeof a.style === 'string' ? a.style : a.style ? 'preview' : await currentStyle();
+  const style = typeof a.style === 'object' && a.style ? a.style : await getStyle(styleName);
+  // The HTML file doesn't need Chrome; the picture of it does.
+  const png = format === 'png' ? await pagePng(doc, style, !!a.dark) : await pagePng(doc, style, !!a.dark).catch(() => null);
+  const out = path.resolve(a.path || `${slugify(doc.title || a.id, new Set())}.${format}`);
+  await fs.writeFile(out, format === 'png' ? png : pageHtml(doc, style, { dark: !!a.dark }));
+  const text = `Wrote ${out} (style "${styleName}"${a.dark ? ', dark' : ''}).${png ? ' The picture is attached so you can check it: look for text cut off at the edges or overlapping.' : ' No picture: Chrome is needed for that.'}`;
+  return png ? [{ type: 'text', text }, { type: 'image', data: png.toString('base64'), mimeType: 'image/png' }] : text;
+}
+
 // What the agent hears back after a change: the elements as stored, plus anything the drawing will ignore.
 async function report(intro, doc, ids) {
   const touched = doc.elements.filter((e) => ids.includes(e.id));
@@ -430,7 +533,27 @@ async function callTool(name, a = {}) {
     return report(`Created "${id}" (v${(await history.latest(id))?.v ?? 1}).${seeIt(id)}`, doc, doc.elements.map((e) => e.id));
   }
   if (name === 'get_diagram') return JSON.stringify({ id: a.id, url: linkTo(a.id), ...(await readDoc(a.id)) });
+  if (name === 'create_page') {
+    if (typeof a.html !== 'string') throw new Error('html must be a string');
+    const extra = { html: a.html, width: a.width || PAGE_SIZE.width, height: a.height || PAGE_SIZE.height };
+    const id = (a.id = await createDiagram(a.title, [], undefined, extra));
+    return withPageWarnings(`Created page "${id}" (v${(await history.latest(id))?.v ?? 1}), ${extra.width} × ${extra.height}.${seeIt(id)} Check it with export_diagram (format png).`, extra.html);
+  }
+  if (name === 'edit_page') {
+    const doc = await readDoc(a.id);
+    if (doc.html === undefined) throw new Error(`"${a.id}" is a diagram, not a page: use edit_diagram.`);
+    if (typeof a.html === 'string') doc.html = a.html;
+    for (const r of a.replace || []) {
+      const n = doc.html.split(r.find).length - 1;
+      if (n !== 1) throw new Error(`replace: ${n ? `"${r.find}" appears ${n} times; include more around it` : `"${r.find}" isn't in the page (read it again with get_diagram)`}. Nothing was changed.`);
+      doc.html = doc.html.replace(r.find, () => r.with);
+    }
+    for (const k of ['title', 'width', 'height']) if (a[k]) doc[k] = a[k];
+    const v = await writeDoc(a.id, doc);
+    return withPageWarnings(`Done: saved as v${v}.${seeIt(a.id)}`, doc.html);
+  }
   if (name === 'edit_diagram') {
+    if ((await readDoc(a.id)).html !== undefined) throw new Error(`"${a.id}" is a page: use edit_page.`);
     const doc = applyEdit(await readDoc(a.id), a);
     if (a.title) doc.title = a.title;
     for (const k of ['subtitle', 'footer', 'scenes', 'speed']) if (k in a) a[k] === null ? delete doc[k] : (doc[k] = a[k]);
@@ -441,8 +564,10 @@ async function callTool(name, a = {}) {
   }
   if (name === 'export_diagram') {
     let format = a.format || 'svg';
-    if (!['svg', 'png', 'animated-svg', 'mp4'].includes(format)) throw new Error('format must be svg, png or mp4');
+    if (!['svg', 'png', 'animated-svg', 'mp4', 'html'].includes(format)) throw new Error('format must be svg, png, mp4 or html');
     const doc = a.id ? await readDoc(a.id) : SAMPLE;
+    if (doc.html !== undefined) return exportPage(a, doc);
+    if (format === 'html') throw new Error('html is for pages; diagrams export as svg, png or mp4');
     // SVG of a diagram with scenes plays them, unless one moment (a beat) is asked for.
     if (format === 'svg' && doc.scenes?.length && a.beat === undefined) format = 'animated-svg';
     const styleName = typeof a.style === 'string' ? a.style : a.style ? 'preview' : await currentStyle();
@@ -536,12 +661,16 @@ const INSTRUCTIONS = `Giotto: live diagrams the user watches at ${url} (Giotto n
 
 // Chats that show apps (ChatGPT, Claude) draw these tools' results with the view in public/app.html.
 const VIEW = 'ui://giotto/diagram.html';
-const VIEW_TOOLS = ['create_diagram', 'edit_diagram', 'get_diagram', 'restore_version'];
+const VIEW_TOOLS = ['create_diagram', 'edit_diagram', 'create_page', 'edit_page', 'get_diagram', 'restore_version'];
 
 // The picture the view shows, in both themes. Sent in _meta: the view sees it, the model doesn't.
 async function viewOf(id) {
   const doc = await readDoc(id);
   const style = await getStyle(await currentStyle());
+  if (doc.html !== undefined) {
+    const { w, total: h } = pageBox(doc, style);
+    return { id, title: doc.title || id, url: linkTo(id), width: w, height: h, html: pageHtml(doc, style), htmlDark: pageHtml(doc, style, { dark: true }) };
+  }
   const draw = (dark) => (doc.scenes?.length ? toAnimatedSvg(forExport(doc), style, { dark }) : toSvg(doc, style, { dark }));
   return { id, title: doc.title || id, url: linkTo(id), svg: draw(false), svgDark: draw(true) };
 }

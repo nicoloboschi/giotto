@@ -5,6 +5,8 @@
 <style>
   html, body { margin: 0; background: transparent; font: 13px system-ui, sans-serif; }
   #view svg { display: block; width: 100%; height: auto; max-height: 640px; }
+  #view .page { position: relative; overflow: hidden; }
+  #view iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
   #bar { display: flex; justify-content: space-between; align-items: center; padding: 6px 2px; color: #888; }
   #bar button { font: inherit; background: none; border: 1px solid #8884; border-radius: 6px; padding: 3px 10px; color: inherit; cursor: pointer; }
   #bar[hidden] { display: none; }
@@ -28,7 +30,20 @@
 
   function draw() {
     if (!diagram) return;
-    document.getElementById('view').innerHTML = dark ? diagram.svgDark : diagram.svg;
+    const view = document.getElementById('view');
+    if (diagram.html !== undefined) {
+      // A page: its own HTML document, scaled down to the chat's width.
+      const scale = Math.min(1, view.clientWidth / diagram.width);
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-same-origin'); // no scripts (fully sandboxed, Chrome draws it blank)
+      Object.assign(frame, { width: diagram.width, height: diagram.height, srcdoc: dark ? diagram.htmlDark : diagram.html });
+      frame.style.transform = `scale(${scale})`;
+      const box = document.createElement('div');
+      box.className = 'page';
+      box.style.height = `${diagram.height * scale}px`;
+      box.append(frame);
+      view.replaceChildren(box);
+    } else view.innerHTML = dark ? diagram.svgDark : diagram.svg;
     document.getElementById('title').textContent = diagram.title;
     document.getElementById('bar').hidden = false;
     document.getElementById('open').hidden = !diagram.url; // hosted: no canvas to open

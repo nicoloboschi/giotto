@@ -34,6 +34,7 @@ Then ask your agent for a diagram. The first time, it sets Giotto up for you and
 - **History:** every change is a numbered version. Look back at any of them and restore it; nothing is lost.
 - **Styles, separate from diagrams.** Diagrams say what things are; the active style decides how everything looks, including dark mode and export headers and footers. Agents make and change styles; you pick one from the gallery.
 - **Scenes:** diagrams can tell a story: packets travel along arrows, boxes fill in, a narration plays. Play them on the canvas, or export an animated SVG (plays on GitHub) or an MP4.
+- **Pages:** for images that aren't diagrams (a results card, a poster, a chart), the agent writes HTML and Giotto shows it, versions it, takes your requested changes and exports it as PNG.
 - **Export** to SVG or PNG. The agent gets the picture back, along with warnings about overlaps or text that doesn't fit.
 
 Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete them; you can, with the × next to each one in the sidebar. New diagrams get a random id, so renaming one never breaks its link.
@@ -44,7 +45,8 @@ Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete t
 | --- | --- |
 | `list_diagrams`, `get_diagram` | Read diagrams, including what you selected |
 | `create_diagram`, `edit_diagram` | Make a diagram, then change it in small steps |
-| `export_diagram` | SVG or PNG file, plus the picture; can preview an unsaved style |
+| `create_page`, `edit_page` | Images the agent writes in HTML (cards, posters, charts), in the style's colors and fonts |
+| `export_diagram` | SVG or PNG file, plus the picture; can preview an unsaved style. Pages export as PNG (needs Chrome) or HTML |
 | `list_styles`, `save_style`, `use_style` | Make, change and switch styles |
 | `diagram_history`, `restore_version` | Every change is a version; restore one as the newest |
 

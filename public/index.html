@@ -15,6 +15,13 @@
     aside { width: 240px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
     .brand { display: flex; align-items: center; gap: 8px; height: 49px; padding: 0 14px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 14px; }
     .brand svg { color: var(--fg); }
+    #theme-btn { margin-left: auto; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; font-weight: 400; }
+    #theme-btn:hover { background: var(--hover); color: var(--fg); }
+    #kinds { display: flex; gap: 2px; margin: 8px 8px 2px; padding: 2px; border-radius: 8px; background: var(--hover); }
+    #kinds button { flex: 1; border: 0; border-radius: 6px; padding: 4px 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
+    #kinds button:hover { color: var(--fg); }
+    #kinds button.on { background: var(--bg); color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    #list p { margin: 10px; color: var(--muted); font-size: 12px; }
     #list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px; }
     #list button { position: relative; display: block; width: 100%; text-align: left; border: 0; border-radius: 6px; padding: 7px 10px; background: transparent; cursor: pointer; }
     #list button:hover { background: var(--hover); }
@@ -22,6 +29,9 @@
     #list .del { position: absolute; top: 6px; right: 6px; padding: 0 6px; border-radius: 4px; color: var(--muted); visibility: hidden; }
     #list button:hover .del, #list .del:focus { visibility: visible; }
     #list .del:hover { background: var(--hover); color: inherit; }
+    #list button { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 9px; align-items: center; }
+    #list .ic { grid-row: span 2; color: var(--muted); }
+    #list button.on .ic { color: var(--fg); }
     #list .t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11.5px; }
 
@@ -43,6 +53,8 @@
     .sws { display: inline-flex; padding-right: 3px; }
 
     #stage { flex: 1; position: relative; overflow: hidden; }
+    #page { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; box-shadow: 0 2px 14px rgba(0,0,0,.14); }
+    #page[hidden] { display: none; }
     #canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: crosshair; }
     #canvas.space { cursor: grab; }
     #canvas [data-id] { cursor: move; }
@@ -130,7 +142,9 @@
       <div class="brand">
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
         Giotto
+        <button id="theme-btn" title="Light, dark, or follow the system"></button>
       </div>
+      <div id="kinds" role="tablist" aria-label="Show"><button data-kind="all">All</button><button data-kind="diagram">Diagrams</button><button data-kind="page">Images</button></div>
       <nav id="list"></nav>
     </aside>
     <main>
@@ -138,10 +152,9 @@
         <input id="title" aria-label="Diagram title" />
         <span id="status"></span>
         <input id="search" type="search" placeholder="Search  ⌘F" aria-label="Search this diagram" />
-        <button id="theme-btn" class="btn" title="Light, dark, or follow the system"></button>
         <button id="history-btn" class="btn" title="Every change is a version; look back and restore">History</button>
         <button id="style-btn" class="btn" aria-haspopup="true"></button>
-        <div class="seg"><span>Export</span><button data-export="svg">SVG</button><button data-export="png">PNG</button><button data-export="json">JSON</button><button id="anim-btn" hidden title="Export the scenes as a video or animated SVG">Animation</button></div>
+        <div class="seg"><span>Export</span><button data-export="svg">SVG</button><button data-export="html" hidden>HTML</button><button data-export="png">PNG</button><button data-export="json">JSON</button><button id="anim-btn" hidden title="Export the scenes as a video or animated SVG">Animation</button></div>
       </header>
       <div id="scenes" hidden></div>
       <div id="gallery" hidden></div>
@@ -153,6 +166,7 @@
         <div class="row"><span id="anim-status"></span><button id="anim-go" class="btn">Export</button></div>
       </div>
       <div id="stage">
+        <iframe id="page" sandbox="allow-same-origin" title="Page" hidden></iframe>
         <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
         <textarea id="edit" rows="1"></textarea>
         <div id="empty">No diagrams yet. Ask your agent to draw something.</div>
@@ -178,6 +192,7 @@
     import { resolveStyle } from '/lib/styles.js';
     import { diffDocs, slugify } from '/lib/edit.js';
     import { timeline, frameAt } from '/lib/scenes.js';
+    import { pageHtml, pageBox } from '/lib/page.js';
 
     const $ = (id) => document.getElementById(id);
     const svg = $('canvas');
@@ -202,15 +217,21 @@
     const placed = () => (doc ? resolve(doc, S) : []);
     const placedEl = (id) => placed().find((e) => e.id === id);
 
+    const HINT = $('hint').textContent;
+    const HINT_PAGE = 'An image: the agent writes its HTML. Drag over an area to request a change · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom';
+
     // ---- drawing ----
 
     function render() {
       const r = svg.getBoundingClientRect();
       svg.setAttribute('viewBox', `${view.x} ${view.y} ${r.width / view.zoom} ${r.height / view.zoom}`);
-      svg.style.backgroundColor = S.background;
-      svg.style.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.2px, transparent 1.2px)` : 'none';
-      svg.style.backgroundSize = `${20 * view.zoom}px ${20 * view.zoom}px`;
-      svg.style.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
+      // The grid is behind everything (a page sits between it and the canvas, which only draws overlays then).
+      const st = $('stage').style;
+      st.backgroundColor = S.background;
+      st.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.2px, transparent 1.2px)` : 'none';
+      st.backgroundSize = `${20 * view.zoom}px ${20 * view.zoom}px`;
+      st.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
+      showPage(preview?.doc || doc);
       const frame = !preview && player.on && doc?.scenes?.length ? frameAt(doc, player.scene, player.t, player.tl) : null;
       const showing = preview?.doc || doc; // an old version while previewing history
       let out = showing ? drawContent(showing, S, { selected: preview ? [] : [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame }) : '';
@@ -220,6 +241,12 @@
         out += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="4" fill="#f59e0b" fill-opacity="0.07" stroke="#f59e0b" stroke-width="${1.5 / z}" stroke-dasharray="${6 / z} ${4 / z}" pointer-events="none"/>`;
         out += `<circle cx="${r.x}" cy="${r.y}" r="${10 / z}" fill="#f59e0b" pointer-events="none"/><text x="${r.x}" y="${r.y}" font-size="${11 / z}" font-weight="700" fill="#fff" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" pointer-events="none">${i + 1}</text>`;
       });
+      // A page: the image's edge, and its size, so you see exactly what gets exported.
+      if (showing?.html !== undefined) {
+        const { w, h } = pageSize(showing), z = view.zoom;
+        out = `<rect x="0" y="0" width="${w}" height="${h}" fill="none" stroke="${S.text}" stroke-opacity="0.35" stroke-width="${1 / z}" pointer-events="none"/>`
+          + `<text x="0" y="${-8 / z}" font-size="${11 / z}" fill="${S.text}" fill-opacity="0.5" font-family="system-ui, sans-serif" pointer-events="none">${w} × ${h}</text>` + out;
+      }
       $('say').hidden = !frame?.say;
       if (frame?.say && $('say').textContent !== frame.say) {
         // New narration fades in.
@@ -236,9 +263,26 @@
       svg.innerHTML = out;
     }
 
+    // A page: the agent's HTML in a frame at 0,0 of the canvas, panned and zoomed with it.
+    // Its size is the whole image: the page plus the style's header and footer.
+    const pageSize = (d) => {
+      const b = pageBox(d, styles[styleId], isDark());
+      return { x: 0, y: 0, w: b.w, h: b.total };
+    };
+    let pageKey = '';
+    function showPage(d) {
+      const frame = $('page');
+      frame.hidden = d?.html === undefined;
+      if (frame.hidden) return (pageKey = '');
+      const { w, h } = pageSize(d);
+      const html = pageHtml(d, styles[styleId], { dark: isDark() });
+      if (html !== pageKey) frame.srcdoc = pageKey = html; // only when it changed: reloading flickers
+      Object.assign(frame.style, { width: `${w}px`, height: `${h}px`, transform: `translate(${-view.x * view.zoom}px, ${-view.y * view.zoom}px) scale(${view.zoom})` });
+    }
+
     function fit() {
       const r = svg.getBoundingClientRect();
-      const b = boundsOf(placed(), S);
+      const b = doc?.html !== undefined ? pageSize(doc) : boundsOf(placed(), S);
       if (!b.w && !b.h) return (view = { x: -40, y: -40, zoom: 1 });
       const zoom = Math.min(1.5, (r.width - 80) / b.w, (r.height - 80) / b.h);
       view = { zoom, x: b.x + b.w / 2 - r.width / zoom / 2, y: b.y + b.h / 2 - r.height / zoom / 2 };
@@ -293,6 +337,10 @@
       if (document.activeElement !== $('title')) $('title').value = doc.title || current;
       runSearch();
       sceneBar();
+      const isPage = doc.html !== undefined;
+      document.querySelector('[data-export="svg"]').hidden = isPage;
+      document.querySelector('[data-export="html"]').hidden = !isPage;
+      $('hint').textContent = isPage ? HINT_PAGE : HINT;
       if (foreign) status(`updated ${new Date().toLocaleTimeString()}`);
       render();
     }
@@ -326,17 +374,38 @@
       return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : new Date(iso).toLocaleDateString();
     };
 
+    // Which kind the sidebar lists: all, diagrams, or images (pages). Remembered in this browser.
+    let kind = store.get('giotto-kind') || 'all';
+    const syncKinds = () => document.querySelectorAll('#kinds button').forEach((b) => {
+      b.classList.toggle('on', b.dataset.kind === kind);
+      b.setAttribute('aria-selected', b.dataset.kind === kind);
+    });
+    syncKinds();
+    $('kinds').onclick = (ev) => {
+      const k = ev.target.closest('button')?.dataset.kind;
+      if (!k) return;
+      store.set('giotto-kind', (kind = k));
+      syncKinds();
+      refreshList();
+    };
+
+    // Diagrams: two boxes and an arrow. Images: a picture.
+    const ICONS = {
+      diagram: '<svg class="ic" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-label="Diagram"><rect x="1.5" y="2" width="5" height="4" rx="1"/><rect x="9.5" y="10" width="5" height="4" rx="1"/><path d="M4 6v4.5a1.5 1.5 0 0 0 1.5 1.5H9.5"/></svg>',
+      page: '<svg class="ic" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-label="Image"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><circle cx="5.5" cy="6" r="1.2"/><path d="M2 12l4-3.5 3 2.5 2.5-2 3 2.5"/></svg>',
+    };
+
     let listKey = '';
     async function refreshList() {
       diagrams = await (await fetch('/api/diagrams')).json();
-      const rows = diagrams.map((d) => ({ ...d, when: `${ago(d.updated)} · ${d.elements} shapes` }));
-      const key = JSON.stringify([current, rows.map((r) => [r.id, r.title, r.when])]);
+      const rows = diagrams.filter((d) => kind === 'all' || d.kind === kind).map((d) => ({ ...d, when: `${ago(d.updated)} · ${d.kind === 'page' ? 'image' : `${d.elements} shapes`}` }));
+      const key = JSON.stringify([current, kind, rows.map((r) => [r.id, r.title, r.when])]);
       if (key === listKey) return; // nothing new: don't rebuild under the mouse
       listKey = key;
       $('list').replaceChildren(...rows.map((d) => {
         const b = document.createElement('button');
         b.className = d.id === current ? 'on' : '';
-        b.innerHTML = '<span class="t"></span><small></small><span class="del" role="button" tabindex="0" title="Delete diagram" aria-label="Delete diagram">×</span>';
+        b.innerHTML = ICONS[d.kind === 'page' ? 'page' : 'diagram'] + '<span class="t"></span><small></small><span class="del" role="button" tabindex="0" title="Delete diagram" aria-label="Delete diagram">×</span>';
         b.querySelector('.t').textContent = d.title;
         b.querySelector('small').textContent = d.when;
         b.onclick = () => open(d.id);
@@ -346,6 +415,11 @@
         };
         return b;
       }));
+      if (!rows.length && diagrams.length) {
+        const p = document.createElement('p');
+        p.textContent = kind === 'page' ? 'No images yet. Ask your agent for one: a results card, a poster, a chart.' : 'No diagrams yet.';
+        $('list').append(p);
+      }
       $('empty').hidden = diagrams.length > 0;
     }
 
@@ -499,12 +573,34 @@
       const n = Math.round;
       if (!items.length) return ['   (empty space)'];
       return items.map((e) => {
+        if (e.page) return `   - <${e.tag}> "${e.text}" at x ${n(e.x)}, y ${n(e.y)}, size ${n(e.w)}×${n(e.h)}`;
         const tags = e.tags?.length ? ` [tags: ${e.tags.join(', ')}]` : '';
         const what = `   - ${e.type}${labelOf(e) ? ` "${labelOf(e).replace(/\n/g, ' ')}"` : ''} (id: ${e.id})${tags}`;
         if (isRouted(e)) return `${what} from ${e.start.id} to ${e.end.id}`;
         const b = bounds(e, S);
         return `${what} at x ${n(b.x)}, y ${n(b.y)}, size ${n(b.w)}×${n(b.h)}`;
       });
+    }
+
+    // On a page, what's in an area is the text it touches: each element that holds text itself, with where that
+    // text sits (the text, not the element's box: a headline's box is as wide as the page).
+    function pageItems(r) {
+      const page = $('page').contentDocument;
+      if (!page?.body) return [];
+      const out = [];
+      for (const node of page.body.querySelectorAll('*')) {
+        const texts = [...node.childNodes].filter((c) => c.nodeType === 3 && c.textContent.trim());
+        if (!texts.length) continue;
+        const range = page.createRange();
+        range.setStartBefore(texts[0]);
+        range.setEndAfter(texts.at(-1));
+        const b = range.getBoundingClientRect();
+        if (b.right < r.x || b.left > r.x + r.w || b.bottom < r.y || b.top > r.y + r.h) continue; // doesn't touch the area
+        const text = texts.map((c) => c.textContent).join(' ').replace(/\s+/g, ' ').trim();
+        out.push({ page: true, tag: node.tagName.toLowerCase(), text: text.slice(0, 80), x: b.left, y: b.top, w: b.width, h: b.height });
+        if (out.length >= 30) break;
+      }
+      return out;
     }
 
     const SUGGEST = {
@@ -514,11 +610,9 @@
 
     function askAbout(r) {
       if (r.w * view.zoom < 5 && r.h * view.zoom < 5) return; // just a click on empty space
-      const items = placed().filter((e) => e.type !== 'legend').filter((e) => {
-        const b = bounds(e, S);
-        return b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h;
-      });
-      selected = new Set(items.map((e) => e.id));
+      const inside = (b) => b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h;
+      const items = doc.html !== undefined ? pageItems(r) : placed().filter((e) => e.type !== 'legend').filter((e) => inside(bounds(e, S)));
+      selected = new Set(items.filter((e) => !e.page).map((e) => e.id));
       selectionChanged();
       asking = { area: r, items };
       // Suggestions fill the box; the box sits next to the area.
@@ -582,7 +676,7 @@
       const list = staged[current] || [];
       const n = Math.round;
       const text = [
-        `Requested changes (${list.length}) for Giotto diagram "${doc.title || current}" (id: ${current}):`,
+        `Requested changes (${list.length}) for Giotto ${doc.html !== undefined ? 'page' : 'diagram'} "${doc.title || current}" (id: ${current}):`,
         ...list.flatMap((it, i) => [
           '',
           `${i + 1}. ${it.text}`,
@@ -789,6 +883,14 @@
     document.querySelectorAll('[data-export]').forEach((btn) => btn.addEventListener('click', async () => {
       if (!doc) return;
       const f = btn.dataset.export;
+      if (doc.html !== undefined) {
+        // A page: PNG drawn by Chrome on the server, or the HTML as one file.
+        if (f === 'html') download(`${fileName()}.html`, pageHtml(doc, styles[styleId], { dark: isDark() }), 'text/html');
+        if (f === 'json') download(`${fileName()}.json`, base, 'application/json');
+        if (f !== 'png') return;
+        const res = await fetch(`/api/page.png?id=${current}&dark=${isDark() ? 1 : 0}`);
+        return res.ok ? download(`${fileName()}.png`, await res.blob()) : toast((await res.json()).error);
+      }
       // A diagram with scenes exports as an animated SVG (all scenes, at the player's speed), like the docs figures.
       if (f === 'svg' && doc.scenes?.length) {
         const res = await fetch(`/api/animation?id=${current}`, { method: 'POST', body: JSON.stringify({ format: 'animated-svg', speed: player.speed, dark: isDark() }) });
