@@ -17,8 +17,10 @@
     #stage { position: fixed; inset: 0; touch-action: none; }
     #cv { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; user-select: none; }
     #cv.panning { cursor: grabbing; }
-    #cv [data-id^="pg-"]:not([data-id="pg-note"]):not([data-id^="pg-ab"]):not([data-id^="pg-cb"]) { cursor: move; }
-    #cv [data-id^="sty-"] { cursor: pointer; }
+    #cv [data-id="grab-a"], #cv [data-id="grab-b"], #cv [data-id="grab-c"], #cv [data-id="grab-wall"] { cursor: move; }
+    #cv [data-id^="look-sty-"] { cursor: pointer; }
+    #world .fresh { animation: pop .6s cubic-bezier(.2,.8,.3,1.2) both; transform-box: fill-box; transform-origin: center; }
+    @keyframes pop { from { opacity: 0; transform: scale(.85); } }
     #page { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
 
     .chrome { position: fixed; z-index: 5; display: flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(8px);
@@ -56,7 +58,7 @@
 </head>
 <body>
   <div id="stage">
-    <svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto documentation, drawn as one diagram"><g id="world"></g><g id="over"></g></svg>
+    <svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto documentation, drawn as one diagram"><g id="world"></g><g id="marks"></g><g id="over"></g></svg>
     <iframe id="page" sandbox="allow-same-origin" title="An image made with Giotto" tabindex="-1"></iframe>
   </div>
   <div id="top" class="chrome">
@@ -84,7 +86,8 @@
     import { DEFAULT_STYLE, resolveStyle } from './lib/styles.js';
     import { timeline, frameAt } from './lib/scenes.js';
     import { pageHtml } from './lib/page.js';
-    import { DOC, TOUR } from './docs.js';
+    import { DOC, TOUR, STORIES } from './docs.js';
+    import { applyEdit } from './lib/edit.js';
     import { STYLES as MORE } from './styles.js';
     import { CARD } from './card.js';
 
@@ -95,17 +98,18 @@
 
     // ---- the diagram and its look ----
 
-    const doc = structuredClone(DOC);
+    let doc = structuredClone(DOC);
     let styleId = STYLES[store.get('giotto-docs-style')] ? store.get('giotto-docs-style') : 'default';
     let dark = store.get('giotto-docs-theme') ? store.get('giotto-docs-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
     let S, placed, views;
-    const sceneStop = TOUR.findIndex((t) => t.id === 'st-scenes');
+    const flowStop = TOUR.findIndex((t) => t.key === 'flow');
     const tl = timeline(doc);
 
     // Where each stop is: its frame, or for unframed stops the things in it.
     function measure() {
       placed = resolve(doc, S);
-      const byId = Object.fromEntries(placed.map((e) => [e.id, e]));
+      // The camera frames each stop as it looks when its story is done, so it doesn't move while the story plays.
+      const byId = Object.fromEntries(resolve(finished(), S).map((e) => [e.id, e]));
       views = TOUR.map((t) => {
         const g = byId[t.id];
         if (t.framed) return bounds(g, S);
@@ -119,15 +123,107 @@
       S = resolveStyle(STYLES[styleId], dark);
       const root = document.documentElement.style;
       for (const [k, v] of Object.entries({ bg: S.background, fg: S.text, muted: S.tagText, panel: S.fill, line: S.groupStroke, accent: S.accent, 'on-accent': S.packetText })) root.setProperty(`--${k}`, v);
-      // The style buttons at stop 08: the active one is lit.
-      for (const id of Object.keys(STYLES)) {
-        const e = doc.elements.find((x) => x.id === `sty-${id}`);
-        if (e) e.tone = id === styleId ? 'blue' : undefined;
-      }
+      litStyle();
       // The image at stop 12 is HTML in the same style (without the export header and footer).
       $('page').srcdoc = pageHtml({ html: CARD, width: 1200, height: 630 }, { ...STYLES[styleId], header: { show: false }, footer: { show: false } }, { dark });
       measure();
       drawn = null;
+    }
+
+    // The style buttons at "Change the look": the active one is lit.
+    function litStyle() {
+      for (const id of Object.keys(STYLES)) {
+        const e = doc.elements.find((x) => x.id === `look-sty-${id}`);
+        if (e) e.tone = id === styleId ? 'blue' : undefined;
+      }
+    }
+
+    // ---- stories: arrive at a stop and its chat plays; each answer changes the diagram through an agent's own edit ----
+
+    const state = {}; // key -> { play, mark }
+    const withTurn = (d, key, turn, replaceLast) => {
+      const chat = d.elements.find((e) => e.id === STORIES[key].chat);
+      const content = chat.content.map((b) => (b.type === 'chat' ? { ...b, turns: [...(replaceLast ? b.turns.slice(0, -1) : b.turns), turn] } : b));
+      return applyEdit(d, { update: [{ id: chat.id, content }] });
+    };
+    // The agent's answer: its edit, with the new boxes put on the canvas (in order, when the step says).
+    function answer(d, key, step) {
+      const { canvas } = STORIES[key];
+      const edit = { add: [], update: [], remove: [], ...structuredClone(step.edit || {}) };
+      if (!edit.add.length && !edit.remove.length && !edit.update.length && !step.kids) return d;
+      if (d.elements.some((e) => e.id === `${key}-wait`)) edit.remove.push(`${key}-wait`);
+      const gone = new Set(edit.remove);
+      const now = d.elements.find((e) => e.id === canvas).children.filter((c) => !gone.has(c));
+      const fresh = edit.add.filter((e) => !['arrow', 'note'].includes(e.type) && !edit.add.some((g) => g.children?.includes(e.id))).map((e) => e.id);
+      edit.update.unshift({ id: canvas, children: step.kids || [...now, ...fresh] });
+      return applyEdit(d, edit);
+    }
+    // The end of every story, for the camera.
+    function finished() {
+      let d = structuredClone(DOC);
+      for (const [key, st] of Object.entries(STORIES)) {
+        for (const step of st.steps) {
+          if (step.you) d = withTurn(d, key, { who: 'You', text: step.you });
+          if (step.agent) d = answer(withTurn(d, key, { who: 'Agent', text: step.agent }), key, step);
+        }
+      }
+      return d;
+    }
+
+    let fresh = new Set();
+    function setDoc(d) {
+      const before = new Set(doc.elements.map((e) => e.id));
+      for (const e of d.elements) if (!before.has(e.id)) fresh.add(e.id);
+      doc = d;
+      litStyle();
+      placed = resolve(doc, S);
+      drawn = null;
+    }
+    // Put a stop back the way it starts.
+    function reset(key) {
+      const mine = (e) => e.id.startsWith(`${key}-`);
+      setDoc({ ...doc, elements: [...doc.elements.filter((e) => !mine(e)), ...structuredClone(DOC.elements.filter(mine))] });
+      fresh.clear();
+      state[key] = { play: false, mark: null };
+    }
+    let run = 0;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    async function play(key) {
+      const me = ++run, alive = () => me === run;
+      reset(key);
+      for (const step of STORIES[key].steps) {
+        await sleep(step.you ? 800 : 500);
+        if (!alive()) return;
+        if (step.mark) {
+          state[key].mark = step.mark;
+          await sleep(step.wait || 1000);
+        }
+        if (step.you) {
+          setDoc(withTurn(doc, key, { who: 'You', text: step.you }));
+          await sleep(step.wait || 700);
+        }
+        if (!alive()) return;
+        if (step.agent) {
+          setDoc(withTurn(doc, key, { who: 'Agent', text: '…' }));
+          await sleep(1100);
+          if (!alive()) return;
+          setDoc(answer(withTurn(doc, key, { who: 'Agent', text: step.agent }, true), key, step));
+          if (step.unmark) state[key].mark = null;
+          if (step.play) state[key].play = true;
+          if (step.style) (styleId = step.style), applyStyle();
+          await sleep(step.wait || 1500);
+        }
+      }
+    }
+    // A story starts when you arrive at its stop (and starts over when you come back).
+    let playedAt = -1;
+    function stories() {
+      const at = Math.round(p);
+      if (Math.abs(p - at) > 0.08 || at === playedAt) return;
+      playedAt = at;
+      run++; // stops the story you left
+      const key = TOUR[at].key;
+      if (STORIES[key]) play(key);
     }
 
     // ---- camera: the tour, plus wherever you dragged or zoomed ----
@@ -173,8 +269,9 @@
       st.backgroundSize = `${24 * view.zoom}px ${24 * view.zoom}px`;
       st.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
 
-      // Stop 09 plays its scene while you're there; everything else is a still.
-      const playing = Math.abs(p - sceneStop) < 0.6;
+      stories();
+      // "Make it tell a story" plays its scene once the agent has answered; everything else is a still.
+      const playing = Math.abs(p - flowStop) < 0.6 && state.flow?.play;
       let fr = null;
       if (playing) {
         sceneT = (sceneT + dt) % tl.scenes[0].duration;
@@ -184,12 +281,26 @@
       if (key !== drawn) {
         $('world').innerHTML = drawContent(doc, S, fr ? { frame: fr } : { resolved: placed });
         drawn = key;
+        if (!fr) {
+          for (const id of fresh) $('world').querySelector(`[data-id="${id}"]`)?.classList.add('fresh');
+          fresh.clear();
+        }
       }
+      // A requested-change area the story draws, like the one you'd drag on the canvas.
+      const mark = Object.values(state).find((s) => s.mark)?.mark;
+      const target_ = mark && placed.find((e) => e.id === mark.id);
+      if (target_) {
+        const b = bounds(target_, S), z = view.zoom, pad = 14;
+        $('marks').innerHTML = `<rect x="${b.x - pad}" y="${b.y - pad}" width="${b.w + pad * 2}" height="${b.h + pad * 2}" rx="5" fill="#f59e0b" fill-opacity="0.1" stroke="#f59e0b" stroke-width="${2 / z}" stroke-dasharray="${7 / z} ${5 / z}"/>`
+          + `<circle cx="${b.x - pad}" cy="${b.y - pad}" r="${11 / z}" fill="#f59e0b"/><text x="${b.x - pad}" y="${b.y - pad}" font-size="${12 / z}" font-weight="700" fill="#fff" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif">1</text>`
+          + `<text x="${b.x - pad + 16 / z}" y="${b.y - pad - 12 / z}" font-size="${13 / z}" font-weight="600" fill="#f59e0b" font-family="system-ui, sans-serif">${mark.text}</text>`;
+      } else $('marks').innerHTML = '';
       $('say').hidden = !fr?.say;
       if (fr?.say && $('say').textContent !== fr.say) $('say').textContent = fr.say;
 
       // The image sits on its slot, panned and zoomed with the canvas.
       const slot = placed.find((e) => e.id === 'img-slot');
+      $('page').style.display = slot ? '' : 'none';
       if (slot) {
         const z = view.zoom, scale = (slot.width / 1200) * z;
         Object.assign($('page').style, { width: '1200px', height: '630px', transform: `translate(${(slot.x - view.x) * z}px, ${(slot.y - view.y) * z}px) scale(${scale})` });
@@ -217,7 +328,7 @@
       const last = at === TOUR.length - 1;
       $('next').textContent = last ? '↺  Back to the start' : `↓  ${String(at + 2).padStart(2, '0')} · ${TOUR[at + 1].title}`;
       $('prev').disabled = at === 0;
-      if (Math.abs(p - target) < 0.01 && location.hash.slice(1) !== TOUR[at].id.slice(3)) history.replaceState(null, '', `#${TOUR[at].id.slice(3)}`);
+      if (Math.abs(p - target) < 0.01 && location.hash.slice(1) !== TOUR[at].key) history.replaceState(null, '', `#${TOUR[at].key}`);
     }
     $('rail').append(...TOUR.map((t, i) => {
       const b = document.createElement('button');
@@ -276,10 +387,10 @@
       svg.setPointerCapture(ev.pointerId);
       // Touch: a vertical swipe moves along the tour.
       if (ev.pointerType === 'touch') return (drag = { type: 'swipe', y: ev.clientY, x: ev.clientX, t: target, ox: off.x });
-      if (id?.startsWith('sty-')) return (drag = { type: 'style', id: id.slice(4) });
+      if (id?.startsWith('look-sty-')) return (drag = { type: 'style', id: id.slice(9) });
       const e = id && doc.elements.find((x) => x.id === id);
-      if (e && ['pg-a', 'pg-b', 'pg-c', 'pg-wall'].includes(id)) return (drag = { type: 'box', e, sx: pt.x, sy: pt.y, x: e.x, y: e.y });
-      const rq = placed.find((x) => x.id === 'rq-flow');
+      if (e && ['grab-a', 'grab-b', 'grab-c', 'grab-wall'].includes(id)) return (drag = { type: 'box', e, sx: pt.x, sy: pt.y, x: e.x, y: e.y });
+      const rq = placed.find((x) => x.id === 'point-canvas');
       if (rq && inside(pt, bounds(rq, S))) return (drag = { type: 'area', a: pt, b: pt });
       drag = { type: 'pan', sx: ev.clientX, sy: ev.clientY, ox: off.x, oy: off.y };
       returning = false;
@@ -311,7 +422,7 @@
         store.set('giotto-docs-style', styleId);
         applyStyle();
       }
-      if (d?.type === 'box') measure();
+      if (d?.type === 'box') placed = resolve(doc, S);
       if (d?.type === 'area') ask(d);
     };
     svg.addEventListener('pointerup', endDrag);
@@ -334,7 +445,7 @@
     let asking = null;
     function note() {
       const r = asking, n = Math.round;
-      const items = placed.filter((e) => !e.id.startsWith('st-') && !e.id.startsWith('path-')).filter((e) => {
+      const items = placed.filter((e) => !e.id.endsWith('-stop') && !e.id.endsWith('-canvas') && !e.id.startsWith('path-')).filter((e) => {
         const b = bounds(e, S);
         return b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h;
       });
@@ -378,12 +489,12 @@
     // ---- start: at the stop in the link, if any ----
 
     applyStyle();
-    const startAt = TOUR.findIndex((t) => t.id === `st-${location.hash.slice(1)}`);
+    const startAt = TOUR.findIndex((t) => t.key === location.hash.slice(1));
     p = target = Math.max(0, startAt);
     addEventListener('resize', () => (drawn = null));
     // Links to a stop (…/#styles) fly there, even in an open tab.
     addEventListener('hashchange', () => {
-      const i = TOUR.findIndex((t) => t.id === `st-${location.hash.slice(1)}`);
+      const i = TOUR.findIndex((t) => t.key === location.hash.slice(1));
       if (i >= 0) go(i);
     });
     requestAnimationFrame(frame);
