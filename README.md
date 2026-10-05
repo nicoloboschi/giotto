@@ -4,6 +4,8 @@ Diagrams your coding agent draws for you, live. The agent (Claude Code, Codex, a
 
 **[Read the docs: they're a canvas →](https://nicoloboschi.github.io/giotto/)**
 
+[![A walkthrough of the docs: you ask your agent, it draws and changes the diagram live](docs/tour.svg)](https://nicoloboschi.github.io/giotto/)
+
 ![How Giotto works](docs/how-it-works.svg)
 
 ![Rich boxes: chat, chips, lists and code, laid out by a group](docs/example.svg)

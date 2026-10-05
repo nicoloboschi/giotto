@@ -397,6 +397,7 @@
 
     // ---- the chats, drawn as terminals over their boxes (Giotto lays them out; this draws them) ----
 
+    const RECORDING = new URLSearchParams(location.search).has('record'); // the README video: no blinking, so still moments stay still
     const TERM = { bar: 30, pad: 16, line: 21, gap: 10, size: 13.5, char: 8.15, input: 40 };
     const ORANGE = '#e3a36f';
     const escT = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -448,7 +449,7 @@
         y += TERM.line;
       }
       // The input box: what you're typing, or a blinking cursor.
-      const iy = b.y + b.h - TERM.input - 10, blink = typing || Math.floor(now / 530) % 2 === 0;
+      const iy = b.y + b.h - TERM.input - 10, blink = typing || RECORDING || Math.floor(now / 530) % 2 === 0;
       const shown = typing.length > cols - 2 ? '…' + typing.slice(-(cols - 3)) : typing;
       const input = `<rect x="${b.x + 10}" y="${iy}" width="${b.w - 20}" height="${TERM.input}" rx="7" fill="none" stroke="#3f434c"/>`
         + `<text x="${b.x + TERM.pad + 2}" y="${iy + TERM.input / 2}" ${mono} fill="${ORANGE}" dominant-baseline="central">&gt;</text>`
