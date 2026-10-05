@@ -143,8 +143,8 @@ storyStop('point', 'Point at what to change', {
   layout: DOWN,
   diagram: login('point'),
   steps: [
-    { mark: { id: 'point-auth', text: 'Split this in two' }, wait: 1200 },
-    { you: 'Requested changes (1)\n1. Split this in two\n   around: Auth', wait: 1000 },
+    { mark: { id: 'point-auth', text: 'Split this in two' } },
+    { you: 'Requested changes (1)\n1. Split this in two\n   around: Auth', label: 'Paste the note to your agent' },
     { agent: 'Split Auth into Sessions and Tokens.', unmark: true, kids: ['point-web', 'point-api', 'point-split', 'point-users'], edit: {
       remove: ['point-auth'],
       add: [
