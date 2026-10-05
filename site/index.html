@@ -19,8 +19,6 @@
     #cv.panning { cursor: grabbing; }
     #cv [data-id="grab-a"], #cv [data-id="grab-b"], #cv [data-id="grab-c"], #cv [data-id="grab-wall"] { cursor: move; }
     #cv [data-id^="look-sty-"] { cursor: pointer; }
-    #world .fresh { animation: pop .6s cubic-bezier(.2,.8,.3,1.2) both; transform-box: fill-box; transform-origin: center; }
-    @keyframes pop { from { opacity: 0; transform: scale(.85); } }
     #page { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
 
     .chrome { position: fixed; z-index: 5; display: flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(8px);
@@ -58,7 +56,7 @@
 </head>
 <body>
   <div id="stage">
-    <svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto documentation, drawn as one diagram"><g id="world"></g><g id="marks"></g><g id="over"></g></svg>
+    <svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto documentation, drawn as one diagram"><g id="world"></g><g id="marks"></g><g id="fx"></g><g id="over"></g></svg>
     <iframe id="page" sandbox="allow-same-origin" title="An image made with Giotto" tabindex="-1"></iframe>
   </div>
   <div id="top" class="chrome">
@@ -170,10 +168,7 @@
       return d;
     }
 
-    let fresh = new Set();
     function setDoc(d) {
-      const before = new Set(doc.elements.map((e) => e.id));
-      for (const e of d.elements) if (!before.has(e.id)) fresh.add(e.id);
       doc = d;
       litStyle();
       placed = resolve(doc, S);
@@ -190,7 +185,7 @@
       }
       return [key, out];
     }));
-    // The scroll positions: one per exchange (arriving at a stop shows its first), one for a stop without a story.
+    // The scroll positions: one per exchange (arriving at a stop plays its first), one for a stop without a story.
     const BEATS = TOUR.flatMap((t, stop) => (EXCHANGES[t.key] || [null]).map((_, i) => ({ stop, n: EXCHANGES[t.key] ? i + 1 : 0 })));
     const LAST = BEATS.length - 1;
     const firstBeat = (stop) => BEATS.findIndex((b) => b.stop === stop);
@@ -201,7 +196,7 @@
       let d = { ...doc, elements: [...doc.elements.filter((e) => !mine(e)), ...structuredClone(DOC.elements.filter(mine))] };
       const s = { play: false, mark: null };
       for (const step of EXCHANGES[key].slice(0, n).flat()) {
-        if (step.mark) s.mark = step.mark;
+        if (step.mark) s.mark = { ...step.mark, t0: 0 };
         if (step.you) d = withTurn(d, key, { who: 'You', text: step.you });
         if (step.agent) d = answer(withTurn(d, key, { who: 'Agent', text: step.agent }), key, step);
         if (step.unmark) s.mark = null;
@@ -209,21 +204,192 @@
       }
       return { d, s };
     }
+
+    // ---- the choreography of one exchange: you type, a request flies to the canvas, the diagram changes, the agent answers ----
+
+    let anim = 0; // the exchange playing; starting another one cancels it
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
+    const node = (id) => $('world').querySelector(`[data-id="${CSS.escape(id)}"]`);
+    function renderNow() {
+      $('world').innerHTML = drawContent(doc, S, { resolved: placed });
+      drawn = 'still';
+    }
+    const boxOf = (id) => {
+      const e = placed.find((x) => x.id === id);
+      return e && bounds(e, S);
+    };
+
+    // Your message, typed in.
+    async function type(key, alive, before, text) {
+      const t0 = performance.now(), dur = Math.min(900, 220 + text.length * 16);
+      for (let k = 0; k < 1 && alive(); ) {
+        k = Math.min(1, (performance.now() - t0) / dur);
+        setDoc(withTurn(before, key, { who: 'You', text: text.slice(0, Math.max(1, Math.ceil(text.length * k))) }));
+        renderNow();
+        await nextFrame();
+      }
+    }
+
+    // A glowing request flying from the chat to the canvas.
+    async function fly(key, alive) {
+      const a = boxOf(STORIES[key].chat), b = boxOf(STORIES[key].canvas);
+      if (!a || !b) return;
+      const from = { x: a.x + a.w, y: a.y + a.h * 0.6 }, to = { x: b.x + b.w * 0.5, y: b.y + Math.min(b.h * 0.4, 160) };
+      const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 120 };
+      const t0 = performance.now(), dur = 620, fx = $('fx');
+      const at = (t) => ({ x: (1 - t) ** 2 * from.x + 2 * (1 - t) * t * mid.x + t * t * to.x, y: (1 - t) ** 2 * from.y + 2 * (1 - t) * t * mid.y + t * t * to.y });
+      for (let k = 0; k < 1 && alive(); ) {
+        k = Math.min(1, (performance.now() - t0) / dur);
+        const e = ease(k), z = view.zoom;
+        fx.innerHTML = [0.18, 0.1, 0].map((lag, i) => {
+          const pt = at(Math.max(0, e - lag));
+          return `<circle cx="${pt.x}" cy="${pt.y}" r="${(i === 2 ? 8 : 5 - i) / z}" fill="${S.accent}" fill-opacity="${i === 2 ? 1 : 0.35}"/>`;
+        }).join('') + (k < 1 ? '' : `<circle cx="${to.x}" cy="${to.y}" r="${8 / z}" fill="none" stroke="${S.accent}" stroke-width="${2 / z}"/>`);
+        await nextFrame();
+      }
+      // The landing ripple.
+      const ring = $('fx').lastElementChild;
+      ring?.animate([{ r: `${8 / view.zoom}px`, opacity: 1 }, { r: `${60 / view.zoom}px`, opacity: 0 }], { duration: 420, easing: 'ease-out', fill: 'forwards' });
+      await wait(140);
+      setTimeout(() => alive() && ($('fx').innerHTML = ''), 400);
+    }
+
+    // The diagram goes from now to `next`: removed boxes shrink away, moved ones slide, new ones pop in one by one
+    // (with a short glow), new arrows draw themselves.
+    async function morph(next, alive) {
+      const old = new Map(placed.map((e) => [e.id, bounds(e, S)]));
+      const ids = new Set(next.elements.map((e) => e.id));
+      const leaving = [...old.keys()].filter((id) => !ids.has(id)).map(node).filter(Boolean);
+      for (const el of leaving) el.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.8)' }], { duration: 280, easing: 'ease-in', fill: 'forwards' });
+      if (leaving.length) await wait(280);
+      if (!alive()) return;
+      setDoc(next);
+      renderNow();
+      let i = 0, arrows = [];
+      for (const e of placed) {
+        const el = node(e.id), was = old.get(e.id);
+        if (!el || e.id.endsWith('-chat') || e.id.endsWith('-stop') || e.id.endsWith('-canvas') || e.id.startsWith('path-')) continue;
+        el.style.transformBox = 'fill-box';
+        el.style.transformOrigin = 'center';
+        if (e.type === 'arrow' || e.type === 'line') {
+          if (!was) arrows.push(el);
+          continue;
+        }
+        const b = bounds(e, S);
+        if (!was) {
+          const delay = 80 + i++ * 140;
+          el.animate([{ opacity: 0, transform: 'translateY(18px) scale(.7)' }, { opacity: 1, transform: 'translateY(-3px) scale(1.05)', offset: 0.7 }, { opacity: 1, transform: 'none' }], { duration: 520, delay, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' });
+          if (e.type !== 'group') el.animate([{ filter: `drop-shadow(0 0 0px ${S.accent})` }, { filter: `drop-shadow(0 0 14px ${S.accent})` }, { filter: `drop-shadow(0 0 0px ${S.accent})` }], { duration: 1300, delay: delay + 200 });
+        } else if (Math.abs(was.x - b.x) > 1 || Math.abs(was.y - b.y) > 1) {
+          if (e.type === 'group') continue; // frames just grow
+          el.animate([{ transform: `translate(${was.x - b.x}px, ${was.y - b.y}px)` }, { transform: 'none' }], { duration: 560, easing: 'cubic-bezier(.3,.7,.2,1)' });
+        }
+      }
+      if (next.elements.some((e) => e.id === 'img-slot') && !old.has('img-slot')) $('page').animate([{ opacity: 0, transform: $('page').style.transform + ' translateY(20px)' }, { opacity: 1 }], { duration: 600, delay: 80, easing: 'ease-out' });
+      // Arrows draw themselves once their boxes are in.
+      const at = 120 + i * 140;
+      for (const el of arrows) {
+        const path = el.querySelector('path');
+        const len = path?.getTotalLength?.() || 0;
+        el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, delay: at, fill: 'backwards' });
+        if (len) path.animate([{ strokeDasharray: `${len}`, strokeDashoffset: len }, { strokeDasharray: `${len}`, strokeDashoffset: 0 }], { duration: 480, delay: at, easing: 'ease-out', fill: 'backwards' });
+      }
+      await wait(at + (arrows.length ? 420 : 0));
+    }
+
+    // A new look: the page dims, the style changes, the page comes back.
+    async function restyle(id) {
+      await $('world').animate([{ opacity: 1 }, { opacity: 0.1 }], { duration: 220, easing: 'ease-in' }).finished;
+      styleId = id;
+      applyStyle();
+      renderNow();
+      $('world').animate([{ opacity: 0.1 }, { opacity: 1 }], { duration: 420, easing: 'ease-out' });
+    }
+
+    async function playExchange(key, n) {
+      const me = ++anim, alive = () => me === anim;
+      const start = build(key, n - 1);
+      state[key] = start.s;
+      setDoc(start.d);
+      renderNow();
+      for (const step of EXCHANGES[key][n - 1]) {
+        if (step.mark) {
+          state[key].mark = { ...step.mark, t0: performance.now() }; // a cursor drags the area out
+          await wait(1100);
+        }
+        if (!alive()) return;
+        if (step.you) {
+          await wait(250);
+          await type(key, alive, doc, step.you);
+          await wait(250);
+        }
+        if (!alive()) return;
+        if (step.agent) {
+          setDoc(withTurn(doc, key, { who: 'Agent', text: '…' }));
+          renderNow();
+          await fly(key, alive);
+          if (!alive()) return;
+          await morph(answer(doc, key, step), alive);
+          if (!alive()) return;
+          if (step.unmark) state[key].mark = null;
+          if (step.style) await restyle(step.style);
+          setDoc(withTurn(doc, key, { who: 'Agent', text: step.agent }, true));
+          renderNow();
+          const chat = node(STORIES[key].chat);
+          chat?.animate([{ filter: `drop-shadow(0 0 0px ${S.accent})` }, { filter: `drop-shadow(0 0 10px ${S.accent})` }, { filter: 'none' }], { duration: 900 });
+          if (step.play) state[key].play = true;
+        }
+      }
+    }
+
+    // "Move things yourself": a cursor grabs a box once and moves it, and the arrows follow.
+    let grabbed = false;
+    async function grabDemo() {
+      grabbed = true;
+      const me = ++anim, alive = () => me === anim;
+      const e = doc.elements.find((x) => x.id === 'grab-a');
+      const from = { x: e.x, y: e.y }, to = { x: e.x + 170, y: e.y + 210 };
+      await wait(500);
+      const t0 = performance.now(), dur = 1300;
+      for (let k = 0; k < 1 && alive(); ) {
+        k = Math.min(1, (performance.now() - t0) / dur);
+        const q = ease(k);
+        e.x = Math.round(from.x + (to.x - from.x) * q);
+        e.y = Math.round(from.y + (to.y - from.y) * q);
+        placed = resolve(doc, S);
+        renderNow();
+        const b = boxOf('grab-a'), z = view.zoom;
+        $('fx').innerHTML = `<path d="M0 0 L0 17 L4.5 13 L8 20 L11 18.5 L7.5 11.5 L13 11.5 Z" fill="#111" stroke="#fff" stroke-width="1.2" transform="translate(${b.x + b.w * 0.6} ${b.y + b.h * 0.55}) scale(${1.2 / z})"/>`;
+        await nextFrame();
+      }
+      await wait(700);
+      if (alive()) $('fx').innerHTML = '';
+    }
+
+    // Which exchange to show: the next one in order plays (once the camera has landed); a jump just shows it.
     const shown = {}; // key -> exchanges on screen
-    let shownBeat = -1;
     function stories() {
       const at = Math.round(p);
-      if (at === shownBeat) return;
-      shownBeat = at;
       const { stop, n } = BEATS[at], key = TOUR[stop].key;
-      if (!n || shown[key] === n) return;
+      const landed = Math.abs(p - at) < 0.04;
+      if (!n) {
+        if (key === 'grab' && landed && !grabbed) grabDemo();
+        return;
+      }
+      if (shown[key] === n) return;
       const was = shown[key] || 0;
+      if (n === was + 1) {
+        if (!landed) return;
+        shown[key] = n;
+        playExchange(key, n);
+        return;
+      }
+      anim++; // a jump: stop any exchange playing, and show this one as it ends
       const { d, s } = build(key, n);
       shown[key] = n;
       state[key] = s;
-      setDoc(d); // what's new pops in
-      // Going forward, a new look lands with the answer that asked for it.
-      for (const step of EXCHANGES[key].slice(was, n).flat()) if (step.style) (styleId = step.style), applyStyle();
+      setDoc(d);
     }
 
     // ---- camera: the tour, plus wherever you dragged or zoomed ----
@@ -282,19 +448,18 @@
       if (key !== drawn) {
         $('world').innerHTML = drawContent(doc, S, fr ? { frame: fr } : { resolved: placed });
         drawn = key;
-        if (!fr) {
-          for (const id of fresh) $('world').querySelector(`[data-id="${id}"]`)?.classList.add('fresh');
-          fresh.clear();
-        }
       }
       // A requested-change area the story draws, like the one you'd drag on the canvas.
       const mark = Object.values(state).find((s) => s.mark)?.mark;
       const target_ = mark && placed.find((e) => e.id === mark.id);
       if (target_) {
         const b = bounds(target_, S), z = view.zoom, pad = 14;
-        $('marks').innerHTML = `<rect x="${b.x - pad}" y="${b.y - pad}" width="${b.w + pad * 2}" height="${b.h + pad * 2}" rx="5" fill="#f59e0b" fill-opacity="0.1" stroke="#f59e0b" stroke-width="${2 / z}" stroke-dasharray="${7 / z} ${5 / z}"/>`
-          + `<circle cx="${b.x - pad}" cy="${b.y - pad}" r="${11 / z}" fill="#f59e0b"/><text x="${b.x - pad}" y="${b.y - pad}" font-size="${12 / z}" font-weight="700" fill="#fff" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif">1</text>`
-          + `<text x="${b.x - pad + 16 / z}" y="${b.y - pad - 12 / z}" font-size="${13 / z}" font-weight="600" fill="#f59e0b" font-family="system-ui, sans-serif">${mark.text}</text>`;
+        const k = mark.t0 ? ease(Math.min(1, (now - mark.t0) / 650)) : 1;
+        const w = (b.w + pad * 2) * k, h = (b.h + pad * 2) * k, cx = b.x - pad + w, cy = b.y - pad + h;
+        $('marks').innerHTML = `<rect x="${b.x - pad}" y="${b.y - pad}" width="${w}" height="${h}" rx="5" fill="#f59e0b" fill-opacity="0.1" stroke="#f59e0b" stroke-width="${2 / z}" stroke-dasharray="${7 / z} ${5 / z}"/>`
+          + (k < 1 || now - mark.t0 < 1000 ? `<path d="M0 0 L0 17 L4.5 13 L8 20 L11 18.5 L7.5 11.5 L13 11.5 Z" fill="#111" stroke="#fff" stroke-width="1.2" transform="translate(${cx} ${cy}) scale(${1.2 / z})"/>` : '')
+          + (k < 1 ? '' : `<circle cx="${b.x - pad}" cy="${b.y - pad}" r="${11 / z}" fill="#f59e0b"/><text x="${b.x - pad}" y="${b.y - pad}" font-size="${12 / z}" font-weight="700" fill="#fff" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif">1</text>`
+          + `<text x="${b.x - pad + 16 / z}" y="${b.y - pad - 12 / z}" font-size="${13 / z}" font-weight="600" fill="#f59e0b" font-family="system-ui, sans-serif">${mark.text}</text>`);
       } else $('marks').innerHTML = '';
       $('say').hidden = !fr?.say;
       if (fr?.say && $('say').textContent !== fr.say) $('say').textContent = fr.say;

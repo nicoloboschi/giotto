@@ -70,17 +70,17 @@ function lines(prefix, x, y, list) {
 // ---- 01 · Welcome: the whole idea, playing ----
 {
   const { x, y } = at(TOUR.length);
-  const head = lines('hello', x + 44, y + 70, [
-    ['Giotto', 110],
-    ['You ask. Your agent draws. You watch it happen.', 32],
-    ['Scroll to take the tour  ↓', 18, { tone: 'blue' }],
+  const head = lines('hello', x + 44, y + 50, [
+    ['Giotto', 76],
+    ['You ask. Your agent draws. You watch it happen.', 28],
+    ['Scroll to follow along  ↓', 16, { tone: 'blue' }],
   ]);
   add(
     ...head,
     box('hello-chat', [T('In your chat'), { type: 'chat', turns: [] }], { width: 400 }),
     waiting('hello'),
-    { id: 'hello-canvas', type: 'group', label: { title: 'Your browser · Checkout' }, padding: 34, children: ['hello-wait'], layout: { direction: 'row', gap: 60, align: 'center' } },
-    { id: 'hello-row', type: 'group', x: x + 44, y: y + 400, children: ['hello-chat', 'hello-canvas'], layout: { direction: 'row', gap: 60, align: 'start' } },
+    { id: 'hello-canvas', type: 'group', label: { title: 'Your browser · Checkout' }, padding: 34, children: ['hello-wait'], layout: { direction: 'grid', columns: 2, gap: 56 } },
+    { id: 'hello-row', type: 'group', x: x + 44, y: y + 285, children: ['hello-chat', 'hello-canvas'], layout: { direction: 'row', gap: 60, align: 'start' } },
   );
   STORIES.hello = {
     chat: 'hello-chat', canvas: 'hello-canvas',
@@ -94,7 +94,7 @@ function lines(prefix, x, y, list) {
         arrow('hello-2', 'hello-pay', 'hello-queue', { label: { text: 'on success' } }),
       ] } },
       { you: 'Add the email we send after.' },
-      { agent: 'Added the receipt email after the queue.', kids: ['hello-cart', 'hello-pay', 'hello-queue', 'hello-mail'], edit: { add: [
+      { agent: 'Added the receipt email after the queue.', kids: ['hello-cart', 'hello-pay', 'hello-mail', 'hello-queue'], edit: { add: [
         box('hello-mail', [T('Receipt email')], { tone: 'purple' }),
         arrow('hello-3', 'hello-queue', 'hello-mail'),
       ] } },
