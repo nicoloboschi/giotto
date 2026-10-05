@@ -35,15 +35,19 @@ function stop(key, title, children, { free = false, frame = true } = {}) {
 // A canvas that starts empty shows a placeholder until the agent's first change (index.html removes it).
 const waiting = (key) => box(`${key}-wait`, [P('waiting for your agent…')]);
 const DOWN = { direction: 'column', gap: 46, align: 'center' };
-function storyStop(key, title, { caption, canvasTitle, layout = { direction: 'row', gap: 70, align: 'center' }, diagram = [], kids, steps, extra = [] }) {
+// The chat is a terminal (index.html draws it over this box): fixed size, it scrolls like a real one.
+const terminal = (key, height = 300) => ({ id: `${key}-chat`, type: 'rectangle', width: 440, height, content: [{ type: 'chat', turns: [] }] });
+function storyStop(key, title, { caption, canvasTitle, layout = { direction: 'row', gap: 70, align: 'center' }, diagram = [], kids, steps, extra = [], term }) {
   if (!diagram.length) diagram = [waiting(key)];
   add(
-    box(`${key}-chat`, [T(title), SUB(caption), { type: 'chat', turns: [] }], { width: 430 }),
+    box(`${key}-about`, [T(title), SUB(caption)], { width: 440 }),
+    terminal(key),
+    { id: `${key}-left`, type: 'group', children: [`${key}-about`, `${key}-chat`], layout: { direction: 'column', gap: 22 } },
     { id: `${key}-canvas`, type: 'group', label: { title: canvasTitle }, padding: 34, children: kids || diagram.filter((e) => !['arrow', 'note'].includes(e.type)).map((e) => e.id), layout },
     ...diagram,
   );
-  STORIES[key] = { chat: `${key}-chat`, canvas: `${key}-canvas`, steps };
-  stop(key, title, [`${key}-chat`, `${key}-canvas`, ...extra]);
+  STORIES[key] = { chat: `${key}-chat`, canvas: `${key}-canvas`, steps, term };
+  stop(key, title, [`${key}-left`, `${key}-canvas`, ...extra]);
 }
 
 // The login flow a few stops build on, under each stop's own prefix.
@@ -77,7 +81,7 @@ function lines(prefix, x, y, list) {
   ]);
   add(
     ...head,
-    box('hello-chat', [T('In your chat'), { type: 'chat', turns: [] }], { width: 400 }),
+    terminal('hello', 280),
     waiting('hello'),
     { id: 'hello-canvas', type: 'group', label: { title: 'Your browser · Checkout' }, padding: 34, children: ['hello-wait'], layout: { direction: 'grid', columns: 2, gap: 56 } },
     { id: 'hello-row', type: 'group', x: x + 44, y: y + 285, children: ['hello-chat', 'hello-canvas'], layout: { direction: 'row', gap: 60, align: 'start' } },
@@ -163,7 +167,7 @@ storyStop('point', 'Point at what to change', {
   const { x, y } = at(TOUR.length);
   const ox = x + 44, oy = y + 90;
   add(
-    { ...box('grab-chat', [T('Move things yourself'), SUB('Grab any box: arrows follow and find their way around. Your agent sees where you put it and leaves it there.'), { type: 'chat', turns: [{ who: 'You', text: '(drag the boxes on the right)' }] }], { width: 430 }), x: ox, y: oy },
+    { ...box('grab-about', [T('Move things yourself'), SUB('Grab any box: arrows follow and find their way around. Your agent sees where you put it and leaves it there.'), P('**Try it:** drag the boxes on the right.')], { width: 440 }), x: ox, y: oy },
     { ...box('grab-a', [T('Drag me')], { tone: 'blue' }), x: ox + 600, y: oy + 10 },
     { ...box('grab-wall', [T('In the way'), P('arrows go around')]), x: ox + 760, y: oy + 140 },
     { ...box('grab-b', [T('And me')], { tone: 'green' }), x: ox + 1000, y: oy + 260 },
@@ -172,7 +176,7 @@ storyStop('point', 'Point at what to change', {
     arrow('grab-cb', 'grab-c', 'grab-b'),
     { id: 'grab-note', type: 'note', text: 'I follow my box.', attachTo: 'grab-c', side: 'bottom' },
   );
-  stop('grab', 'Move things yourself', ['grab-chat', 'grab-a', 'grab-wall', 'grab-b', 'grab-c'], { free: true });
+  stop('grab', 'Move things yourself', ['grab-about', 'grab-a', 'grab-wall', 'grab-b', 'grab-c'], { free: true });
 }
 
 // ---- 06 · Make it tell a story ----
@@ -267,6 +271,7 @@ storyStop('share', 'Share it', {
 storyStop('where', 'Where it works', {
   caption: 'Claude Code, Codex and any agent that speaks MCP. In ChatGPT and Claude, the diagram shows up right in the chat.',
   canvasTitle: 'ChatGPT · Giotto',
+  term: 'ChatGPT',
   steps: [
     { you: '@Giotto map our pricing tiers.' },
     { agent: 'Here are your three plans.', kids: ['where-free', 'where-pro', 'where-team'], edit: { add: [

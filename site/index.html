@@ -19,6 +19,7 @@
     #cv.panning { cursor: grabbing; }
     #cv [data-id="grab-a"], #cv [data-id="grab-b"], #cv [data-id="grab-c"], #cv [data-id="grab-wall"] { cursor: move; }
     #cv [data-id^="look-sty-"] { cursor: pointer; }
+    #world [data-id$="-chat"] { display: none; } /* drawn as a terminal instead */
     #page { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
 
     .chrome { position: fixed; z-index: 5; display: flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(8px);
@@ -56,7 +57,7 @@
 </head>
 <body>
   <div id="stage">
-    <svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto documentation, drawn as one diagram"><g id="world"></g><g id="marks"></g><g id="fx"></g><g id="over"></g></svg>
+    <svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto documentation, drawn as one diagram"><g id="world"></g><g id="term"></g><g id="marks"></g><g id="fx"></g><g id="over"></g></svg>
     <iframe id="page" sandbox="allow-same-origin" title="An image made with Giotto" tabindex="-1"></iframe>
   </div>
   <div id="top" class="chrome">
@@ -225,7 +226,7 @@
       const t0 = performance.now(), dur = Math.min(900, 220 + text.length * 16);
       for (let k = 0; k < 1 && alive(); ) {
         k = Math.min(1, (performance.now() - t0) / dur);
-        setDoc(withTurn(before, key, { who: 'You', text: text.slice(0, Math.max(1, Math.ceil(text.length * k))) }));
+        setDoc(withTurn(before, key, { who: 'You', text: text.slice(0, Math.max(1, Math.ceil(text.length * k))), typing: true }));
         renderNow();
         await nextFrame();
       }
@@ -321,8 +322,12 @@
         if (!alive()) return;
         if (step.you) {
           await wait(250);
-          await type(key, alive, doc, step.you);
-          await wait(250);
+          const before = doc;
+          await type(key, alive, before, step.you);
+          await wait(220);
+          setDoc(withTurn(before, key, { who: 'You', text: step.you })); // sent: it moves up into the history
+          renderNow();
+          await wait(200);
         }
         if (!alive()) return;
         if (step.agent) {
@@ -336,8 +341,6 @@
           if (step.style) await restyle(step.style);
           setDoc(withTurn(doc, key, { who: 'Agent', text: step.agent }, true));
           renderNow();
-          const chat = node(STORIES[key].chat);
-          chat?.animate([{ filter: `drop-shadow(0 0 0px ${S.accent})` }, { filter: `drop-shadow(0 0 10px ${S.accent})` }, { filter: 'none' }], { duration: 900 });
           if (step.play) state[key].play = true;
         }
       }
@@ -390,6 +393,81 @@
       shown[key] = n;
       state[key] = s;
       setDoc(d);
+    }
+
+    // ---- the chats, drawn as terminals over their boxes (Giotto lays them out; this draws them) ----
+
+    const TERM = { bar: 30, pad: 16, line: 21, gap: 10, size: 13.5, char: 8.15, input: 40 };
+    const ORANGE = '#e3a36f';
+    const escT = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    function wrapCols(text, cols) {
+      const out = [];
+      for (const raw of String(text).split('\n')) {
+        let line = '';
+        for (const word of raw.split(/(?<= )/)) {
+          if ((line + word).length > cols && line.trim()) out.push(line.trimEnd()), (line = word.trimStart() ? word : '');
+          else line += word;
+        }
+        out.push(line.trimEnd());
+      }
+      return out;
+    }
+    function terminal(key, now) {
+      const e = placed.find((x) => x.id === STORIES[key].chat);
+      if (!e) return '';
+      const b = bounds(e, S), cols = Math.floor((b.w - TERM.pad * 2 - 18) / TERM.char);
+      const turns = e.content.find((c) => c.type === 'chat').turns;
+      const spin = '✻✽✶✳✢·'[Math.floor(now / 140) % 6];
+      // History, newest at the bottom; what doesn't fit scrolls away.
+      const rows = [];
+      let typing = '';
+      for (const t of turns) {
+        if (t.typing) {
+          typing = t.text;
+          continue;
+        }
+        rows.push({ gap: true });
+        if (t.who === 'You') wrapCols(t.text, cols).forEach((l, i) => rows.push({ mark: i ? '' : '>', mc: ORANGE, text: l, color: '#f4f4f5', bg: true }));
+        else if (t.text === '…') rows.push({ mark: spin, mc: ORANGE, text: 'Drawing in Giotto…', color: ORANGE });
+        else wrapCols(t.text, cols).forEach((l, i) => rows.push({ mark: i ? '' : '⏺', mc: '#f4f4f5', text: l, color: '#d4d4d8' }));
+      }
+      const room = b.h - TERM.bar - TERM.input - TERM.pad * 1.6;
+      let used = 0, from = rows.length;
+      while (from > 0 && used + (rows[from - 1].gap ? TERM.gap : TERM.line) <= room) used += rows[--from].gap ? TERM.gap : TERM.line;
+      let y = b.y + TERM.bar + TERM.pad * 0.6;
+      const mono = `font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="${TERM.size}"`;
+      let body = '';
+      for (const r of rows.slice(from)) {
+        if (r.gap) {
+          y += TERM.gap;
+          continue;
+        }
+        if (r.bg) body += `<rect x="${b.x + 8}" y="${y}" width="${b.w - 16}" height="${TERM.line}" fill="#ffffff" fill-opacity="0.06"/>`;
+        if (r.mark) body += `<text x="${b.x + TERM.pad}" y="${y + TERM.line / 2}" ${mono} fill="${r.mc}" dominant-baseline="central">${escT(r.mark)}</text>`;
+        body += `<text x="${b.x + TERM.pad + 18}" y="${y + TERM.line / 2}" ${mono} fill="${r.color}" dominant-baseline="central" xml:space="preserve">${escT(r.text)}</text>`;
+        y += TERM.line;
+      }
+      // The input box: what you're typing, or a blinking cursor.
+      const iy = b.y + b.h - TERM.input - 10, blink = typing || Math.floor(now / 530) % 2 === 0;
+      const shown = typing.length > cols - 2 ? '…' + typing.slice(-(cols - 3)) : typing;
+      const input = `<rect x="${b.x + 10}" y="${iy}" width="${b.w - 20}" height="${TERM.input}" rx="7" fill="none" stroke="#3f434c"/>`
+        + `<text x="${b.x + TERM.pad + 2}" y="${iy + TERM.input / 2}" ${mono} fill="${ORANGE}" dominant-baseline="central">&gt;</text>`
+        + `<text x="${b.x + TERM.pad + 20}" y="${iy + TERM.input / 2}" ${mono} fill="#f4f4f5" dominant-baseline="central" xml:space="preserve">${escT(shown)}</text>`
+        + (blink ? `<rect x="${b.x + TERM.pad + 20 + shown.length * TERM.char}" y="${iy + TERM.input / 2 - 8}" width="${TERM.char}" height="16" fill="#f4f4f5" fill-opacity="0.85"/>` : '');
+      const title = STORIES[key].term || 'claude — ~/shop';
+      const win = `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="11" fill="#16181d" stroke="#2c3038" stroke-width="1.2"/>`
+        + `<path d="M${b.x} ${b.y + TERM.bar} H${b.x + b.w}" stroke="#2c3038"/>`
+        + ['#ff5f57', '#febc2e', '#28c840'].map((c, i) => `<circle cx="${b.x + 18 + i * 17}" cy="${b.y + TERM.bar / 2}" r="5.2" fill="${c}"/>`).join('')
+        + `<text x="${b.x + b.w / 2}" y="${b.y + TERM.bar / 2}" font-family="system-ui, sans-serif" font-size="11.5" fill="#8b8f98" text-anchor="middle" dominant-baseline="central">${escT(title)}</text>`;
+      return `<g data-term="${key}" filter="url(#term-shadow)">${win}</g><g>${body}${input}</g>`;
+    }
+    let termKey = '';
+    function drawTerminals(now) {
+      // Only the stops near the camera, redrawn when something in them changed (text, spinner, cursor).
+      const near = new Set([BEATS[Math.floor(p)]?.stop, BEATS[Math.ceil(p)]?.stop]);
+      const keys = Object.keys(STORIES).filter((k) => near.has(TOUR.findIndex((t) => t.key === k)));
+      const out = `<defs><filter id="term-shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#000" flood-opacity="0.22"/></filter></defs>` + keys.map((k) => terminal(k, now)).join('');
+      if (out !== termKey) $('term').innerHTML = termKey = out;
     }
 
     // ---- camera: the tour, plus wherever you dragged or zoomed ----
@@ -449,6 +527,7 @@
         $('world').innerHTML = drawContent(doc, S, fr ? { frame: fr } : { resolved: placed });
         drawn = key;
       }
+      drawTerminals(now);
       // A requested-change area the story draws, like the one you'd drag on the canvas.
       const mark = Object.values(state).find((s) => s.mark)?.mark;
       const target_ = mark && placed.find((e) => e.id === mark.id);
