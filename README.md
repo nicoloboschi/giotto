@@ -56,7 +56,7 @@ Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete t
 
 ## Develop
 
-The [docs](https://nicoloboschi.github.io/giotto/) are one Giotto diagram (`site/docs.js`) that `site/index.html` draws with Giotto's own renderer and tours as you scroll. `node site/build.mjs` builds them into `_site/`; they deploy on every push to `main`.
+The [docs](https://nicoloboschi.github.io/giotto/) are one Giotto diagram (`site/docs.js`) that `site/index.html` draws with Giotto's own renderer and tours as you scroll. `node site/build.mjs` builds them into `_site/`; they deploy on every push to `main`. The walkthrough at the top of this README (`docs/tour.svg`) is exported from the same page as one animated SVG: see `site/record-tour.cjs`.
 
 ```sh
 node bin/giotto.js      # canvas

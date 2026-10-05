@@ -398,6 +398,7 @@
     // ---- the chats, drawn as terminals over their boxes (Giotto lays them out; this draws them) ----
 
     const RECORDING = new URLSearchParams(location.search).has('record'); // the README video: no blinking, so still moments stay still
+    const EXPORT = new URLSearchParams(location.search).has('export'); // site/tour.js turns the tour into one animated SVG
     const TERM = { bar: 30, pad: 16, line: 21, gap: 10, size: 13.5, char: 8.15, input: 40 };
     const ORANGE = '#e3a36f';
     const escT = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -449,12 +450,12 @@
         y += TERM.line;
       }
       // The input box: what you're typing, or a blinking cursor.
-      const iy = b.y + b.h - TERM.input - 10, blink = typing || RECORDING || Math.floor(now / 530) % 2 === 0;
+      const iy = b.y + b.h - TERM.input - 10, blink = typing || RECORDING || EXPORT || Math.floor(now / 530) % 2 === 0;
       const shown = typing.length > cols - 2 ? '…' + typing.slice(-(cols - 3)) : typing;
       const input = `<rect x="${b.x + 10}" y="${iy}" width="${b.w - 20}" height="${TERM.input}" rx="7" fill="none" stroke="#3f434c"/>`
         + `<text x="${b.x + TERM.pad + 2}" y="${iy + TERM.input / 2}" ${mono} fill="${ORANGE}" dominant-baseline="central">&gt;</text>`
-        + `<text x="${b.x + TERM.pad + 20}" y="${iy + TERM.input / 2}" ${mono} fill="#f4f4f5" dominant-baseline="central" xml:space="preserve">${escT(shown)}</text>`
-        + (blink ? `<rect x="${b.x + TERM.pad + 20 + shown.length * TERM.char}" y="${iy + TERM.input / 2 - 8}" width="${TERM.char}" height="16" fill="#f4f4f5" fill-opacity="0.85"/>` : '');
+        + `<text class="t-typed" x="${b.x + TERM.pad + 20}" y="${iy + TERM.input / 2}" ${mono} fill="#f4f4f5" dominant-baseline="central" xml:space="preserve">${escT(shown)}</text>`
+        + (blink ? `<rect class="t-cursor" x="${b.x + TERM.pad + 20 + shown.length * TERM.char}" y="${iy + TERM.input / 2 - 8}" width="${TERM.char}" height="16" fill="#f4f4f5" fill-opacity="0.85"/>` : '');
       const title = STORIES[key].term || 'claude — ~/shop';
       const win = `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="11" fill="#16181d" stroke="#2c3038" stroke-width="1.2"/>`
         + `<path d="M${b.x} ${b.y + TERM.bar} H${b.x + b.w}" stroke="#2c3038"/>`
@@ -477,14 +478,15 @@
     let off = { x: 0, y: 0, zoom: 1 }, returning = false;
     const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
     function fitView(v) {
-      const r = svg.getBoundingClientRect(), wide = r.width > 760;
+      const r = svg.getBoundingClientRect(), wide = r.width > 760 && !EXPORT;
+      if (EXPORT) return { cx: v.x + v.w / 2, cy: v.y + v.h / 2, zoom: Math.min((r.width - 60) / v.w, (r.height - 50) / v.h, 1.6), shift: 0 };
       const W = r.width - (wide ? 230 : 24), H = r.height - 150; // room for the rail and the bottom bar
       const zoom = Math.min(W / v.w, H / v.h, 1.6);
       return { cx: v.x + v.w / 2, cy: v.y + v.h / 2, zoom, shift: wide ? -105 : 0 };
     }
-    function camera() {
-      const i = Math.max(0, Math.min(LAST, Math.floor(p))), sa = BEATS[i].stop, sb = BEATS[Math.min(i + 1, LAST)].stop;
-      const f = sa === sb ? 0 : ease(p - i); // within a stop the camera holds still
+    function camera(at = p) {
+      const i = Math.max(0, Math.min(LAST, Math.floor(at))), sa = BEATS[i].stop, sb = BEATS[Math.min(i + 1, LAST)].stop;
+      const f = sa === sb ? 0 : ease(at - i); // within a stop the camera holds still
       const a = fitView(views[sa]), b = fitView(views[sb]);
       // Between stops the camera pulls back a little, like a flight.
       const zoom = (a.zoom + (b.zoom - a.zoom) * f) * (1 - 0.32 * Math.sin(Math.PI * f)) * off.zoom;
@@ -751,7 +753,17 @@
       const i = TOUR.findIndex((t) => t.key === location.hash.slice(1));
       if (i >= 0 && BEATS[Math.round(target)].stop !== i) go(firstBeat(i));
     });
-    requestAnimationFrame(frame);
+    if (EXPORT) {
+      // No live tour: site/tour.js drives these to write the walkthrough as one animated SVG.
+      for (const id of ['top', 'rail', 'bottom', 'page']) $(id).style.display = 'none';
+      const api = {
+        DOC, TOUR, STORIES, EXCHANGES, BEATS, LAST, STYLES, build, withTurn, answer, drawContent, bounds, resolve, terminal, camera,
+        setDoc, getDoc: () => doc, getPlaced: () => placed, getS: () => S, styleId: () => styleId,
+        setStyle: (id) => ((styleId = id), applyStyle()),
+        size: () => svg.getBoundingClientRect(),
+      };
+      window.exportTour = async () => (await import('./tour.js')).exportTour(api);
+    } else requestAnimationFrame(frame);
   </script>
 </body>
 </html>
