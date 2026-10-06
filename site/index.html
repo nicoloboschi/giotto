@@ -146,26 +146,6 @@
       return new Set(ids.filter(Boolean).map((id) => of.get(id)).filter(Boolean));
     }
 
-    // On a tall screen a whole stop is too small to read, so the camera follows the action inside it: the terminal
-    // while you type and the agent works, the diagram while it changes, the whole stop when a chapter starts.
-    const focusOf = [];
-    let stopFocus = null;
-    for (const [i, b] of scene.beats.entries()) {
-      if ('focus' in b) stopFocus = b.focus;
-      const along = [b.edges].flat().some((h) => h && !h.from); // packets along arrows: the whole picture
-      focusOf[i] = 'focus' in b ? b.focus
-        : b.pointer?.area ? b.pointer.area
-        : b.pointer?.drag || along ? stopFocus
-        : b.edit ? b.edit.update?.find((u) => u.children)?.id ?? stopFocus
-        : b.term ? b.term.id
-        : focusOf[i - 1];
-    }
-    function portrait(frame, aspect) {
-      if (aspect >= 1 || !frame) return frame;
-      const i = frame.beat, b = scene.beats[i];
-      const prev = focusOf[i - 1];
-      return { ...frame, camera: { focus: focusOf[i], prev: prev === focusOf[i] ? undefined : prev, ms: t - b.start } };
-    }
     // An edit landing, played by the browser: new things pop in one by one, moved ones slide from where they were,
     // removed ones fade out, new arrows draw themselves. `ms`: how far into the landing we already are.
     const nodeOf = (g, id) => g.querySelector(`[data-id="${CSS.escape(id)}"]`);
@@ -218,14 +198,9 @@
     // once at the sharpest zoom the flight reaches; nothing is repainted while flying.
     let camKey = '', camAnim = null, camFrom = null, camTo = null;
     const camCss = (c) => `translate3d(${(-c.x * c.z).toFixed(2)}px, ${(-c.top * c.z).toFixed(2)}px, 0) scale(${c.z.toFixed(5)})`;
-    // On a tall screen the camera follows the action but never zooms in further than about a stop's width, so what's
-    // around it (the terminal, the rest of the diagram) stays in view.
-    const MIN_VIEW = 600;
     function aim(frame, els, S, W, H) {
-      const v = cameraView(frame, els, S, W / H);
-      let z = W / v.w, cx = v.x + v.w / 2, cy = v.y + v.h / 2;
-      if (W / H < 1 && W / z < MIN_VIEW) z = W / MIN_VIEW;
-      return { x: cx - W / z / 2, top: cy - H / z / 2 - 18 / z, z };
+      const v = cameraView(frame, els, S, W / H), z = W / v.w;
+      return { x: v.x + v.w / 2 - W / z / 2, top: v.y + v.h / 2 - H / z / 2 - 18 / z, z };
     }
     let screen = svg.getBoundingClientRect(); // measured once (and on resize): measuring every frame forces a layout
     function draw() {
@@ -235,9 +210,9 @@
       const r = screen, wide = r.width > 760;
       // The camera, fitted to the space left free by the chapters and the bottom bar: one GPU transform.
       const W = r.width - (wide ? 220 : 0), H = r.height - 90;
-      const pf = portrait(frame, W / H), b = scene.beats[frame.beat];
-      // Where this beat ends up (its edits landed), so the camera doesn't drift while things grow.
-      const endFrame = frameAt(doc, 0, b.end - 1, tl), endEls = resolveFrame(doc, S, endFrame);
+      // One flight per chapter, to the scene as it looks when the chapter is done; then the camera holds still.
+      const pf = frame, next = tl.chapters.find((c) => c.start > t);
+      const endFrame = frameAt(doc, 0, (next ? next.start : scene.duration) - 1, tl), endEls = resolveFrame(doc, S, endFrame);
       const focus = pf?.camera ? { ...pf.camera, ms: 1e9 } : undefined;
       const to = aim({ ...pf, camera: focus }, endEls, S, W, H);
       const key = camCss(to);
