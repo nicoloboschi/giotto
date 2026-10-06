@@ -218,9 +218,14 @@
     // once at the sharpest zoom the flight reaches; nothing is repainted while flying.
     let camKey = '', camAnim = null, camFrom = null, camTo = null;
     const camCss = (c) => `translate3d(${(-c.x * c.z).toFixed(2)}px, ${(-c.top * c.z).toFixed(2)}px, 0) scale(${c.z.toFixed(5)})`;
+    // On a tall screen the camera follows the action but never zooms in further than about a stop's width, so what's
+    // around it (the terminal, the rest of the diagram) stays in view.
+    const MIN_VIEW = 600;
     function aim(frame, els, S, W, H) {
-      const v = cameraView(frame, els, S, W / H), z = W / v.w;
-      return { x: v.x, top: v.y - 18 / z, z };
+      const v = cameraView(frame, els, S, W / H);
+      let z = W / v.w, cx = v.x + v.w / 2, cy = v.y + v.h / 2;
+      if (W / H < 1 && W / z < MIN_VIEW) z = W / MIN_VIEW;
+      return { x: cx - W / z / 2, top: cy - H / z / 2 - 18 / z, z };
     }
     let screen = svg.getBoundingClientRect(); // measured once (and on resize): measuring every frame forces a layout
     function draw() {
