@@ -188,7 +188,7 @@
     </main>
   </div>
   <script type="module">
-    import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE } from './lib/render.js';
+    import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE, cameraView, resolveFrame } from './lib/render.js';
     import { resolveStyle } from './lib/styles.js';
     import { diffDocs, slugify } from './lib/edit.js';
     import { timeline, frameAt } from './lib/scenes.js';
@@ -224,17 +224,23 @@
 
     function render() {
       const r = svg.getBoundingClientRect();
+      const frame = !preview && player.on && doc?.scenes?.length ? frameAt(doc, player.scene, player.t, player.tl) : null;
+      // A scene can switch the style, and move the camera: while it plays, the canvas follows.
+      const FS = frame?.style && styles[frame.style.id] ? resolveStyle(styles[frame.style.id], isDark()) : S;
+      if (frame?.camera) {
+        const v = cameraView(frame, resolveFrame(doc, FS, frame), FS, r.width / r.height);
+        view = { x: v.x, y: v.y, zoom: r.width / v.w };
+      }
       svg.setAttribute('viewBox', `${view.x} ${view.y} ${r.width / view.zoom} ${r.height / view.zoom}`);
       // The grid is behind everything (a page sits between it and the canvas, which only draws overlays then).
       const st = $('stage').style;
-      st.backgroundColor = S.background;
-      st.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.2px, transparent 1.2px)` : 'none';
+      st.backgroundColor = FS.background;
+      st.backgroundImage = FS.grid ? `radial-gradient(${FS.grid} 1.2px, transparent 1.2px)` : 'none';
       st.backgroundSize = `${20 * view.zoom}px ${20 * view.zoom}px`;
       st.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
       showPage(preview?.doc || doc);
-      const frame = !preview && player.on && doc?.scenes?.length ? frameAt(doc, player.scene, player.t, player.tl) : null;
       const showing = preview?.doc || doc; // an old version while previewing history
-      let out = showing ? drawContent(showing, S, { selected: preview ? [] : [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame }) : '';
+      let out = showing ? drawContent(showing, S, { selected: preview ? [] : [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame, styles }) : '';
       // Staged change requests: numbered dashed areas.
       (staged[current] || []).forEach((it, i) => {
         const r = it.area, z = view.zoom;

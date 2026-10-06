@@ -3,35 +3,28 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Giotto docs</title>
-  <meta name="description" content="Diagrams your coding agent draws for you, live. The docs are a canvas: scroll to take the tour." />
+  <title>Giotto: diagrams your agent draws</title>
+  <meta name="description" content="Diagrams your coding agent draws for you, live. This page is one Giotto diagram, played: scroll to follow along." />
   <meta property="og:title" content="Giotto: diagrams your agent draws" />
-  <meta property="og:description" content="The docs are a canvas: scroll to take the tour." />
+  <meta property="og:description" content="This page is one Giotto diagram, played: scroll to follow along." />
   <meta property="og:image" content="https://nicoloboschi.github.io/giotto/card.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <style>
-    /* Page colors follow the active Giotto style (set from script). */
     :root { --bg: #fbfaf7; --fg: #1f2937; --muted: #64748b; --panel: #ffffff; --line: #e4e0d6; --accent: #2563eb; --on-accent: #fff; }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
     #stage { position: fixed; inset: 0; touch-action: none; }
-    #cv { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; user-select: none; }
-    #cv.panning { cursor: grabbing; }
-    #cv [data-id="grab-a"], #cv [data-id="grab-b"], #cv [data-id="grab-c"], #cv [data-id="grab-wall"] { cursor: move; }
-    #cv [data-id^="look-sty-"] { cursor: pointer; }
-    #world [data-id$="-chat"] { display: none; } /* drawn as a terminal instead */
-    #page { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
-
+    #cv { position: absolute; inset: 0; width: 100%; height: 100%; user-select: none; }
     .chrome { position: fixed; z-index: 5; display: flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(8px);
       border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.08); }
     #top { left: 16px; top: 16px; padding: 7px 8px 7px 14px; }
     #top b { font-size: 15px; display: flex; align-items: center; gap: 8px; }
-    #top span { color: var(--muted); }
+    #top a.src { color: var(--muted); text-decoration: none; font-size: 12.5px; padding: 0 4px; }
+    #top a.src:hover { color: var(--fg); text-decoration: underline; }
     .btn { display: inline-flex; align-items: center; justify-content: center; height: 30px; min-width: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px;
-      background: transparent; color: var(--fg); font: inherit; cursor: pointer; text-decoration: none; }
+      background: transparent; color: var(--fg); font: inherit; cursor: pointer; text-decoration: none; white-space: nowrap; }
     .btn:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
     .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-
     #rail { right: 16px; top: 50%; transform: translateY(-50%); flex-direction: column; align-items: stretch; gap: 0; padding: 6px; max-height: calc(100% - 32px); overflow-y: auto; }
     #rail button { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; text-align: left; padding: 4px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
     #rail button i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; flex: none; }
@@ -39,731 +32,172 @@
     #rail button.seen i { background: currentColor; opacity: .5; }
     #rail button.on { color: var(--fg); font-weight: 600; background: color-mix(in srgb, var(--accent) 12%, transparent); }
     #rail button.on i { background: var(--accent); border-color: var(--accent); opacity: 1; }
-
-    #bottom { left: 50%; bottom: 18px; transform: translateX(-50%); padding: 6px; }
+    #bottom { left: 50%; bottom: 18px; transform: translateX(-50%); padding: 6px; max-width: calc(100% - 32px); }
     #bottom .count { color: var(--muted); font-size: 12px; padding: 0 6px; font-variant-numeric: tabular-nums; }
-    #say { position: fixed; z-index: 4; left: 50%; bottom: 76px; transform: translateX(-50%); max-width: min(620px, calc(100% - 32px)); padding: 10px 14px; border-radius: 10px;
+    #next { overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+    #say { position: fixed; z-index: 4; left: 50%; bottom: 78px; transform: translateX(-50%); max-width: min(620px, calc(100% - 32px)); padding: 10px 14px; border-radius: 10px;
       background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 18px rgba(0,0,0,.1); font-size: 15px; text-align: center; transition: opacity .3s; }
     #say[hidden] { display: block; opacity: 0; pointer-events: none; }
-    #ask { position: fixed; z-index: 6; width: min(460px, calc(100% - 32px)); padding: 14px; display: grid; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.18); }
-    #ask[hidden] { display: none; }
-    #ask textarea, #ask pre { width: 100%; margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); color: var(--fg); font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
-    #ask textarea { font: inherit; resize: vertical; min-height: 44px; outline: 0; }
-    #ask pre { max-height: 220px; overflow: auto; white-space: pre-wrap; }
-    #ask .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
-    #ask small { flex: 1; color: var(--muted); }
-    @media (max-width: 760px) { #rail { display: none; } #top span { display: none; } #say { bottom: 70px; font-size: 14px; } }
+    @media (max-width: 760px) { #rail { display: none; } #top a.src { display: none; } }
   </style>
 </head>
 <body>
-  <div id="stage">
-    <svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto documentation, drawn as one diagram"><g id="world"></g><g id="term"></g><g id="marks"></g><g id="fx"></g><g id="over"></g></svg>
-    <iframe id="page" sandbox="allow-same-origin" title="An image made with Giotto" tabindex="-1"></iframe>
-  </div>
+  <div id="stage"><svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto's docs: one Giotto diagram, played"><g id="world"></g></svg></div>
   <div id="top" class="chrome">
-    <b><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Giotto</b><span>docs</span>
+    <b><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Giotto</b>
+    <a class="src" href="giotto-docs.json" title="This page is this one Giotto diagram, played">the diagram</a>
+    <a class="src" href="https://github.com/nicoloboschi/giotto/blob/main/docs/tour.svg" title="The same diagram, exported by Giotto as an animated SVG">as a video</a>
     <button id="theme" class="btn" title="Light or dark">◐</button>
     <a class="btn" href="https://github.com/nicoloboschi/giotto" target="_blank" rel="noopener">GitHub</a>
   </div>
-  <nav id="rail" class="chrome" aria-label="Stops"></nav>
+  <nav id="rail" class="chrome" aria-label="Chapters"></nav>
   <div id="bottom" class="chrome">
-    <button id="prev" class="btn" aria-label="Previous stop">↑</button>
+    <button id="prev" class="btn" aria-label="Back">↑</button>
     <span class="count" id="count"></span>
     <button id="next" class="btn primary"></button>
   </div>
   <div id="say" hidden></div>
-  <div id="ask" hidden>
-    <strong>What should change here?</strong>
-    <textarea id="ask-text">Make the API bigger</textarea>
-    <small>This is the note you'd paste to your agent:</small>
-    <pre id="ask-note"></pre>
-    <div class="row"><small id="ask-status"></small><button id="ask-close" class="btn">Close</button><button id="ask-copy" class="btn primary">Copy</button></div>
-  </div>
 
   <script type="module">
-    import { drawContent, resolve, bounds, labelOf, isRouted } from './lib/render.js';
+    // A small player for a Giotto diagram with scenes. It draws each moment with Giotto's own renderer (lib/);
+    // scrolling plays the scene up to the next beat marked "wait". Everything on the page (the stops, the
+    // terminals, the edits, the camera) is in giotto-docs.json, which Giotto also exports as docs/tour.svg.
+    import { drawContent, resolveFrame, cameraView, styleOf } from './lib/render.js';
     import { DEFAULT_STYLE, resolveStyle } from './lib/styles.js';
     import { timeline, frameAt } from './lib/scenes.js';
-    import { pageHtml } from './lib/page.js';
-    import { DOC, TOUR, STORIES } from './docs.js';
-    import { applyEdit } from './lib/edit.js';
-    import { STYLES as MORE } from './styles.js';
-    import { CARD } from './card.js';
+    import { STYLES } from './styles.js';
 
     const $ = (id) => document.getElementById(id);
     const svg = $('cv');
-    const STYLES = { default: DEFAULT_STYLE, ...MORE };
     const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-
-    // ---- the diagram and its look ----
-
-    let doc = structuredClone(DOC);
-    let styleId = STYLES[store.get('giotto-docs-style')] ? store.get('giotto-docs-style') : 'default';
+    const doc = await (await fetch('./giotto-docs.json')).json();
+    const styles = { default: DEFAULT_STYLE, ...STYLES };
+    const tl = timeline(doc), scene = tl.scenes[0];
     let dark = store.get('giotto-docs-theme') ? store.get('giotto-docs-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-    let S, placed, views;
-    const flowStop = TOUR.findIndex((t) => t.key === 'flow');
-    const tl = timeline(doc);
 
-    // Where each stop is: its frame, or for unframed stops the things in it.
-    function measure() {
-      placed = resolve(doc, S);
-      // The camera frames each stop as it looks when its story is done, so it doesn't move while the story plays.
-      const byId = Object.fromEntries(resolve(finished(), S).map((e) => [e.id, e]));
-      views = TOUR.map((t) => {
-        const g = byId[t.id];
-        if (t.framed) return bounds(g, S);
-        const bs = g.children.map((c) => bounds(byId[c], S));
-        const x = Math.min(...bs.map((b) => b.x)), y = Math.min(...bs.map((b) => b.y));
-        return { x: x - 40, y: y - 40, w: Math.max(...bs.map((b) => b.x + b.w)) - x + 80, h: Math.max(...bs.map((b) => b.y + b.h)) - y + 80 };
-      });
-    }
+    // Where the player rests: before every beat that says "wait", and at the very end.
+    const stops = [...scene.beats.filter((b, i) => b.wait && i > 0).map((b) => b.start - 1), scene.duration - 1]; // just before: resting there shows nothing of it yet
+    const LAST = stops.length - 1;
+    const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const chapterAt = (time) => tl.chapters.filter((c) => c.start <= time).at(-1);
+    let t = 0, goal = 0; // the scene plays from t up to stops[goal], then rests
+    const linked = tl.chapters.find((c) => slug(c.label) === location.hash.slice(1));
+    if (linked) (t = linked.start), (goal = Math.max(0, stops.findIndex((s) => s > t)));
 
-    function applyStyle() {
-      S = resolveStyle(STYLES[styleId], dark);
-      const root = document.documentElement.style;
-      for (const [k, v] of Object.entries({ bg: S.background, fg: S.text, muted: S.tagText, panel: S.fill, line: S.groupStroke, accent: S.accent, 'on-accent': S.packetText })) root.setProperty(`--${k}`, v);
-      litStyle();
-      // The image at stop 12 is HTML in the same style (without the export header and footer).
-      $('page').srcdoc = pageHtml({ html: CARD, width: 1200, height: 630 }, { ...STYLES[styleId], header: { show: false }, footer: { show: false } }, { dark });
-      measure();
-      drawn = null;
-    }
-
-    // The style buttons at "Change the look": the active one is lit.
-    function litStyle() {
-      for (const id of Object.keys(STYLES)) {
-        const e = doc.elements.find((x) => x.id === `look-sty-${id}`);
-        if (e) e.tone = id === styleId ? 'blue' : undefined;
-      }
-    }
-
-    // ---- stories: arrive at a stop and its chat plays; each answer changes the diagram through an agent's own edit ----
-
-    const state = {}; // key -> { play, mark }
-    const withTurn = (d, key, turn, replaceLast) => {
-      const chat = d.elements.find((e) => e.id === STORIES[key].chat);
-      const content = chat.content.map((b) => (b.type === 'chat' ? { ...b, turns: [...(replaceLast ? b.turns.slice(0, -1) : b.turns), turn] } : b));
-      return applyEdit(d, { update: [{ id: chat.id, content }] });
-    };
-    // The agent's answer: its edit, with the new boxes put on the canvas (in order, when the step says).
-    function answer(d, key, step) {
-      const { canvas } = STORIES[key];
-      const edit = { add: [], update: [], remove: [], ...structuredClone(step.edit || {}) };
-      if (!edit.add.length && !edit.remove.length && !edit.update.length && !step.kids) return d;
-      if (d.elements.some((e) => e.id === `${key}-wait`)) edit.remove.push(`${key}-wait`);
-      const gone = new Set(edit.remove);
-      const now = d.elements.find((e) => e.id === canvas).children.filter((c) => !gone.has(c));
-      const fresh = edit.add.filter((e) => !['arrow', 'note'].includes(e.type) && !edit.add.some((g) => g.children?.includes(e.id))).map((e) => e.id);
-      edit.update.unshift({ id: canvas, children: step.kids || [...now, ...fresh] });
-      return applyEdit(d, edit);
-    }
-    // The end of every story, for the camera.
-    function finished() {
-      let d = structuredClone(DOC);
-      for (const [key, st] of Object.entries(STORIES)) {
-        for (const step of st.steps) {
-          if (step.you) d = withTurn(d, key, { who: 'You', text: step.you });
-          if (step.agent) d = answer(withTurn(d, key, { who: 'Agent', text: step.agent }), key, step);
-        }
-      }
-      return d;
-    }
-
-    function setDoc(d) {
-      doc = d;
-      litStyle();
-      placed = resolve(doc, S);
-      drawn = null;
-    }
-    // ---- the story at each stop moves with your scrolling: one scroll, one exchange ----
-
-    // A stop's steps, grouped into exchanges: a new one starts each time you speak.
-    const EXCHANGES = Object.fromEntries(Object.entries(STORIES).map(([key, st]) => {
-      const out = [];
-      for (const step of st.steps) {
-        if (!out.length || (step.you && out.at(-1).length)) out.push([]);
-        out.at(-1).push(step);
-      }
-      return [key, out];
-    }));
-    // The scroll positions: one per exchange (arriving at a stop plays its first), one for a stop without a story.
-    const BEATS = TOUR.flatMap((t, stop) => (EXCHANGES[t.key] || [null]).map((_, i) => ({ stop, n: EXCHANGES[t.key] ? i + 1 : 0 })));
-    const LAST = BEATS.length - 1;
-    const firstBeat = (stop) => BEATS.findIndex((b) => b.stop === stop);
-
-    // A stop with its first n exchanges done, rebuilt from the start (so going back works too).
-    function build(key, n) {
-      const mine = (e) => e.id.startsWith(`${key}-`);
-      let d = { ...doc, elements: [...doc.elements.filter((e) => !mine(e)), ...structuredClone(DOC.elements.filter(mine))] };
-      const s = { play: false, mark: null };
-      for (const step of EXCHANGES[key].slice(0, n).flat()) {
-        if (step.mark) s.mark = { ...step.mark, t0: 0 };
-        if (step.you) d = withTurn(d, key, { who: 'You', text: step.you });
-        if (step.agent) d = answer(withTurn(d, key, { who: 'Agent', text: step.agent }), key, step);
-        if (step.unmark) s.mark = null;
-        if (step.play) s.play = true;
-      }
-      return { d, s };
-    }
-
-    // ---- the choreography of one exchange: you type, a request flies to the canvas, the diagram changes, the agent answers ----
-
-    let anim = 0; // the exchange playing; starting another one cancels it
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
-    const node = (id) => $('world').querySelector(`[data-id="${CSS.escape(id)}"]`);
-    function renderNow() {
-      $('world').innerHTML = drawContent(doc, S, { resolved: placed });
-      drawn = 'still';
-    }
-    const boxOf = (id) => {
-      const e = placed.find((x) => x.id === id);
-      return e && bounds(e, S);
-    };
-
-    // Your message, typed in.
-    async function type(key, alive, before, text) {
-      const t0 = performance.now(), dur = Math.min(900, 220 + text.length * 16);
-      for (let k = 0; k < 1 && alive(); ) {
-        k = Math.min(1, (performance.now() - t0) / dur);
-        setDoc(withTurn(before, key, { who: 'You', text: text.slice(0, Math.max(1, Math.ceil(text.length * k))), typing: true }));
-        renderNow();
-        await nextFrame();
-      }
-    }
-
-    // A glowing request flying from the chat to the canvas.
-    async function fly(key, alive) {
-      const a = boxOf(STORIES[key].chat), b = boxOf(STORIES[key].canvas);
-      if (!a || !b) return;
-      const from = { x: a.x + a.w, y: a.y + a.h * 0.6 }, to = { x: b.x + b.w * 0.5, y: b.y + Math.min(b.h * 0.4, 160) };
-      const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 120 };
-      const t0 = performance.now(), dur = 620, fx = $('fx');
-      const at = (t) => ({ x: (1 - t) ** 2 * from.x + 2 * (1 - t) * t * mid.x + t * t * to.x, y: (1 - t) ** 2 * from.y + 2 * (1 - t) * t * mid.y + t * t * to.y });
-      for (let k = 0; k < 1 && alive(); ) {
-        k = Math.min(1, (performance.now() - t0) / dur);
-        const e = ease(k), z = view.zoom;
-        fx.innerHTML = [0.18, 0.1, 0].map((lag, i) => {
-          const pt = at(Math.max(0, e - lag));
-          return `<circle cx="${pt.x}" cy="${pt.y}" r="${(i === 2 ? 8 : 5 - i) / z}" fill="${S.accent}" fill-opacity="${i === 2 ? 1 : 0.35}"/>`;
-        }).join('') + (k < 1 ? '' : `<circle cx="${to.x}" cy="${to.y}" r="${8 / z}" fill="none" stroke="${S.accent}" stroke-width="${2 / z}"/>`);
-        await nextFrame();
-      }
-      // The landing ripple.
-      const ring = $('fx').lastElementChild;
-      ring?.animate([{ r: `${8 / view.zoom}px`, opacity: 1 }, { r: `${60 / view.zoom}px`, opacity: 0 }], { duration: 420, easing: 'ease-out', fill: 'forwards' });
-      await wait(140);
-      setTimeout(() => alive() && ($('fx').innerHTML = ''), 400);
-    }
-
-    // The diagram goes from now to `next`: removed boxes shrink away, moved ones slide, new ones pop in one by one
-    // (with a short glow), new arrows draw themselves.
-    async function morph(next, alive) {
-      const old = new Map(placed.map((e) => [e.id, bounds(e, S)]));
-      const ids = new Set(next.elements.map((e) => e.id));
-      const leaving = [...old.keys()].filter((id) => !ids.has(id)).map(node).filter(Boolean);
-      for (const el of leaving) el.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.8)' }], { duration: 280, easing: 'ease-in', fill: 'forwards' });
-      if (leaving.length) await wait(280);
-      if (!alive()) return;
-      setDoc(next);
-      renderNow();
-      let i = 0, arrows = [];
-      for (const e of placed) {
-        const el = node(e.id), was = old.get(e.id);
-        if (!el || e.id.endsWith('-chat') || e.id.endsWith('-stop') || e.id.endsWith('-canvas') || e.id.startsWith('path-')) continue;
-        el.style.transformBox = 'fill-box';
-        el.style.transformOrigin = 'center';
-        if (e.type === 'arrow' || e.type === 'line') {
-          if (!was) arrows.push(el);
-          continue;
-        }
-        const b = bounds(e, S);
-        if (!was) {
-          const delay = 80 + i++ * 140;
-          el.animate([{ opacity: 0, transform: 'translateY(18px) scale(.7)' }, { opacity: 1, transform: 'translateY(-3px) scale(1.05)', offset: 0.7 }, { opacity: 1, transform: 'none' }], { duration: 520, delay, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' });
-          if (e.type !== 'group') el.animate([{ filter: `drop-shadow(0 0 0px ${S.accent})` }, { filter: `drop-shadow(0 0 14px ${S.accent})` }, { filter: `drop-shadow(0 0 0px ${S.accent})` }], { duration: 1300, delay: delay + 200 });
-        } else if (Math.abs(was.x - b.x) > 1 || Math.abs(was.y - b.y) > 1) {
-          if (e.type === 'group') continue; // frames just grow
-          el.animate([{ transform: `translate(${was.x - b.x}px, ${was.y - b.y}px)` }, { transform: 'none' }], { duration: 560, easing: 'cubic-bezier(.3,.7,.2,1)' });
-        }
-      }
-      if (next.elements.some((e) => e.id === 'img-slot') && !old.has('img-slot')) $('page').animate([{ opacity: 0, transform: $('page').style.transform + ' translateY(20px)' }, { opacity: 1 }], { duration: 600, delay: 80, easing: 'ease-out' });
-      // Arrows draw themselves once their boxes are in.
-      const at = 120 + i * 140;
-      for (const el of arrows) {
-        const path = el.querySelector('path');
-        const len = path?.getTotalLength?.() || 0;
-        el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, delay: at, fill: 'backwards' });
-        if (len) path.animate([{ strokeDasharray: `${len}`, strokeDashoffset: len }, { strokeDasharray: `${len}`, strokeDashoffset: 0 }], { duration: 480, delay: at, easing: 'ease-out', fill: 'backwards' });
-      }
-      await wait(at + (arrows.length ? 420 : 0));
-    }
-
-    // A new look: the page dims, the style changes, the page comes back.
-    async function restyle(id) {
-      await $('world').animate([{ opacity: 1 }, { opacity: 0.1 }], { duration: 220, easing: 'ease-in' }).finished;
-      styleId = id;
-      applyStyle();
-      renderNow();
-      $('world').animate([{ opacity: 0.1 }, { opacity: 1 }], { duration: 420, easing: 'ease-out' });
-    }
-
-    async function playExchange(key, n) {
-      const me = ++anim, alive = () => me === anim;
-      const start = build(key, n - 1);
-      state[key] = start.s;
-      setDoc(start.d);
-      renderNow();
-      for (const step of EXCHANGES[key][n - 1]) {
-        if (step.mark) {
-          state[key].mark = { ...step.mark, t0: performance.now() }; // a cursor drags the area out
-          await wait(1100);
-        }
-        if (!alive()) return;
-        if (step.you) {
-          await wait(250);
-          const before = doc;
-          await type(key, alive, before, step.you);
-          await wait(220);
-          setDoc(withTurn(before, key, { who: 'You', text: step.you })); // sent: it moves up into the history
-          renderNow();
-          await wait(200);
-        }
-        if (!alive()) return;
-        if (step.agent) {
-          setDoc(withTurn(doc, key, { who: 'Agent', text: '…' }));
-          renderNow();
-          await fly(key, alive);
-          if (!alive()) return;
-          await morph(answer(doc, key, step), alive);
-          if (!alive()) return;
-          if (step.unmark) state[key].mark = null;
-          if (step.style) await restyle(step.style);
-          setDoc(withTurn(doc, key, { who: 'Agent', text: step.agent }, true));
-          renderNow();
-          if (step.play) state[key].play = true;
-        }
-      }
-    }
-
-    // "Move things yourself": a cursor grabs a box once and moves it, and the arrows follow.
-    let grabbed = false;
-    async function grabDemo() {
-      grabbed = true;
-      const me = ++anim, alive = () => me === anim;
-      const e = doc.elements.find((x) => x.id === 'grab-a');
-      const from = { x: e.x, y: e.y }, to = { x: e.x + 170, y: e.y + 210 };
-      await wait(500);
-      const t0 = performance.now(), dur = 1300;
-      for (let k = 0; k < 1 && alive(); ) {
-        k = Math.min(1, (performance.now() - t0) / dur);
-        const q = ease(k);
-        e.x = Math.round(from.x + (to.x - from.x) * q);
-        e.y = Math.round(from.y + (to.y - from.y) * q);
-        placed = resolve(doc, S);
-        renderNow();
-        const b = boxOf('grab-a'), z = view.zoom;
-        $('fx').innerHTML = `<path d="M0 0 L0 17 L4.5 13 L8 20 L11 18.5 L7.5 11.5 L13 11.5 Z" fill="#111" stroke="#fff" stroke-width="1.2" transform="translate(${b.x + b.w * 0.6} ${b.y + b.h * 0.55}) scale(${1.2 / z})"/>`;
-        await nextFrame();
-      }
-      await wait(700);
-      if (alive()) $('fx').innerHTML = '';
-    }
-
-    // Which exchange to show: the next one in order plays (once the camera has landed); a jump just shows it.
-    const shown = {}; // key -> exchanges on screen
-    function stories() {
-      const at = Math.round(p);
-      const { stop, n } = BEATS[at], key = TOUR[stop].key;
-      const landed = Math.abs(p - at) < 0.04;
-      if (!n) {
-        if (key === 'grab' && landed && !grabbed) grabDemo();
-        return;
-      }
-      if (shown[key] === n) return;
-      const was = shown[key] || 0;
-      if (n === was + 1) {
-        if (!landed) return;
-        shown[key] = n;
-        playExchange(key, n);
-        return;
-      }
-      anim++; // a jump: stop any exchange playing, and show this one as it ends
-      const { d, s } = build(key, n);
-      shown[key] = n;
-      state[key] = s;
-      setDoc(d);
-    }
-
-    // ---- the chats, drawn as terminals over their boxes (Giotto lays them out; this draws them) ----
-
-    const RECORDING = new URLSearchParams(location.search).has('record'); // the README video: no blinking, so still moments stay still
-    const EXPORT = new URLSearchParams(location.search).has('export'); // site/tour.js turns the tour into one animated SVG
-    const TERM = { bar: 30, pad: 16, line: 21, gap: 10, size: 13.5, char: 8.15, input: 40 };
-    const ORANGE = '#e3a36f';
-    const escT = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    function wrapCols(text, cols) {
-      const out = [];
-      for (const raw of String(text).split('\n')) {
-        let line = '';
-        for (const word of raw.split(/(?<= )/)) {
-          if ((line + word).length > cols && line.trim()) out.push(line.trimEnd()), (line = word.trimStart() ? word : '');
-          else line += word;
-        }
-        out.push(line.trimEnd());
-      }
-      return out;
-    }
-    function terminal(key, now) {
-      const e = placed.find((x) => x.id === STORIES[key].chat);
-      if (!e) return '';
-      const b = bounds(e, S), cols = Math.floor((b.w - TERM.pad * 2 - 18) / TERM.char);
-      const turns = e.content.find((c) => c.type === 'chat').turns;
-      const spin = '✻✽✶✳✢·'[Math.floor(now / 140) % 6];
-      // History, newest at the bottom; what doesn't fit scrolls away.
-      const rows = [];
-      let typing = '';
-      for (const t of turns) {
-        if (t.typing) {
-          typing = t.text;
-          continue;
-        }
-        rows.push({ gap: true });
-        if (t.who === 'You') wrapCols(t.text, cols).forEach((l, i) => rows.push({ mark: i ? '' : '>', mc: ORANGE, text: l, color: '#f4f4f5', bg: true }));
-        else if (t.text === '…') rows.push({ mark: spin, mc: ORANGE, text: 'Drawing in Giotto…', color: ORANGE });
-        else wrapCols(t.text, cols).forEach((l, i) => rows.push({ mark: i ? '' : '⏺', mc: '#f4f4f5', text: l, color: '#d4d4d8' }));
-      }
-      const room = b.h - TERM.bar - TERM.input - TERM.pad * 1.6;
-      let used = 0, from = rows.length;
-      while (from > 0 && used + (rows[from - 1].gap ? TERM.gap : TERM.line) <= room) used += rows[--from].gap ? TERM.gap : TERM.line;
-      let y = b.y + TERM.bar + TERM.pad * 0.6;
-      const mono = `font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="${TERM.size}"`;
-      let body = '';
-      for (const r of rows.slice(from)) {
-        if (r.gap) {
-          y += TERM.gap;
-          continue;
-        }
-        if (r.bg) body += `<rect x="${b.x + 8}" y="${y}" width="${b.w - 16}" height="${TERM.line}" fill="#ffffff" fill-opacity="0.06"/>`;
-        if (r.mark) body += `<text x="${b.x + TERM.pad}" y="${y + TERM.line / 2}" ${mono} fill="${r.mc}" dominant-baseline="central">${escT(r.mark)}</text>`;
-        body += `<text x="${b.x + TERM.pad + 18}" y="${y + TERM.line / 2}" ${mono} fill="${r.color}" dominant-baseline="central" xml:space="preserve">${escT(r.text)}</text>`;
-        y += TERM.line;
-      }
-      // The input box: what you're typing, or a blinking cursor.
-      const iy = b.y + b.h - TERM.input - 10, blink = typing || RECORDING || EXPORT || Math.floor(now / 530) % 2 === 0;
-      const shown = typing.length > cols - 2 ? '…' + typing.slice(-(cols - 3)) : typing;
-      const input = `<rect x="${b.x + 10}" y="${iy}" width="${b.w - 20}" height="${TERM.input}" rx="7" fill="none" stroke="#3f434c"/>`
-        + `<text x="${b.x + TERM.pad + 2}" y="${iy + TERM.input / 2}" ${mono} fill="${ORANGE}" dominant-baseline="central">&gt;</text>`
-        + `<text class="t-typed" x="${b.x + TERM.pad + 20}" y="${iy + TERM.input / 2}" ${mono} fill="#f4f4f5" dominant-baseline="central" xml:space="preserve">${escT(shown)}</text>`
-        + (blink ? `<rect class="t-cursor" x="${b.x + TERM.pad + 20 + shown.length * TERM.char}" y="${iy + TERM.input / 2 - 8}" width="${TERM.char}" height="16" fill="#f4f4f5" fill-opacity="0.85"/>` : '');
-      const title = STORIES[key].term || 'claude — ~/shop';
-      const win = `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="11" fill="#16181d" stroke="#2c3038" stroke-width="1.2"/>`
-        + `<path d="M${b.x} ${b.y + TERM.bar} H${b.x + b.w}" stroke="#2c3038"/>`
-        + ['#ff5f57', '#febc2e', '#28c840'].map((c, i) => `<circle cx="${b.x + 18 + i * 17}" cy="${b.y + TERM.bar / 2}" r="5.2" fill="${c}"/>`).join('')
-        + `<text x="${b.x + b.w / 2}" y="${b.y + TERM.bar / 2}" font-family="system-ui, sans-serif" font-size="11.5" fill="#8b8f98" text-anchor="middle" dominant-baseline="central">${escT(title)}</text>`;
-      return `<g data-term="${key}" filter="url(#term-shadow)">${win}</g><g>${body}${input}</g>`;
-    }
-    let termKey = '';
-    function drawTerminals(now) {
-      // Only the stops near the camera, redrawn when something in them changed (text, spinner, cursor).
-      const near = new Set([BEATS[Math.floor(p)]?.stop, BEATS[Math.ceil(p)]?.stop]);
-      const keys = Object.keys(STORIES).filter((k) => near.has(TOUR.findIndex((t) => t.key === k)));
-      const out = `<defs><filter id="term-shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#000" flood-opacity="0.22"/></filter></defs>` + keys.map((k) => terminal(k, now)).join('');
-      if (out !== termKey) $('term').innerHTML = termKey = out;
-    }
-
-    // ---- camera: the tour, plus wherever you dragged or zoomed ----
-
-    let p = 0, target = 0; // position on the tour, in beats: 2.5 = halfway between beat 2 and beat 3
-    let off = { x: 0, y: 0, zoom: 1 }, returning = false;
-    const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
-    function fitView(v) {
-      const r = svg.getBoundingClientRect(), wide = r.width > 760 && !EXPORT;
-      if (EXPORT) return { cx: v.x + v.w / 2, cy: v.y + v.h / 2, zoom: Math.min((r.width - 60) / v.w, (r.height - 50) / v.h, 1.6), shift: 0 };
-      const W = r.width - (wide ? 230 : 24), H = r.height - 150; // room for the rail and the bottom bar
-      const zoom = Math.min(W / v.w, H / v.h, 1.6);
-      return { cx: v.x + v.w / 2, cy: v.y + v.h / 2, zoom, shift: wide ? -105 : 0 };
-    }
-    function camera(at = p) {
-      const i = Math.max(0, Math.min(LAST, Math.floor(at))), sa = BEATS[i].stop, sb = BEATS[Math.min(i + 1, LAST)].stop;
-      const f = sa === sb ? 0 : ease(at - i); // within a stop the camera holds still
-      const a = fitView(views[sa]), b = fitView(views[sb]);
-      // Between stops the camera pulls back a little, like a flight.
-      const zoom = (a.zoom + (b.zoom - a.zoom) * f) * (1 - 0.32 * Math.sin(Math.PI * f)) * off.zoom;
-      const r = svg.getBoundingClientRect();
-      const cx = a.cx + (b.cx - a.cx) * f + off.x, cy = a.cy + (b.cy - a.cy) * f + off.y;
-      return { zoom, x: cx - (r.width / 2 + a.shift) / zoom, y: cy - (r.height / 2 - 20) / zoom, w: r.width / zoom, h: r.height / zoom };
-    }
-    let view = { x: 0, y: 0, zoom: 1, w: 1, h: 1 };
-
-    // ---- drawing: the diagram changes rarely; the camera every frame ----
-
-    let drawn = null, sceneT = 0, lastT = performance.now();
-    function frame(now) {
-      const dt = Math.min(64, now - lastT);
-      lastT = now;
-      p += (target - p) * Math.min(1, dt / 210);
-      if (Math.abs(target - p) < 0.0005) p = target;
-      if (returning) {
-        const k = Math.min(1, dt / 160);
-        off = { x: off.x * (1 - k), y: off.y * (1 - k), zoom: 1 + (off.zoom - 1) * (1 - k) };
-        if (Math.abs(off.x) + Math.abs(off.y) < 0.5 && Math.abs(off.zoom - 1) < 0.002) (off = { x: 0, y: 0, zoom: 1 }), (returning = false);
-      }
-      view = camera();
-      svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+    // ---- one moment, drawn ----
+    function draw() {
+      const frame = frameAt(doc, 0, t, tl);
+      const S = resolveStyle(styleOf(frame, DEFAULT_STYLE, styles), dark);
+      const els = resolveFrame(doc, S, frame);
+      const r = svg.getBoundingClientRect(), wide = r.width > 760;
+      // The camera, fitted to the space left free by the chapters and the bottom bar.
+      const W = r.width - (wide ? 220 : 0), H = r.height - 90;
+      const v = cameraView(frame, els, S, W / H), z = W / v.w, top = v.y - 18 / z;
+      svg.setAttribute('viewBox', `${v.x} ${top} ${r.width / z} ${r.height / z}`);
+      $('world').innerHTML = drawContent(doc, S, { frame, resolved: els });
       const st = $('stage').style;
       st.backgroundColor = S.background;
       st.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.3px, transparent 1.3px)` : 'none';
-      st.backgroundSize = `${24 * view.zoom}px ${24 * view.zoom}px`;
-      st.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
-
-      stories();
-      // "Make it tell a story" plays its scene once the agent has answered; everything else is a still.
-      const playing = BEATS[Math.round(p)].stop === flowStop && Math.abs(p - Math.round(p)) < 0.4 && state.flow?.play;
-      let fr = null;
-      if (playing) {
-        sceneT = (sceneT + dt) % tl.scenes[0].duration;
-        fr = frameAt(doc, 0, sceneT, tl);
-      }
-      const key = playing ? `scene:${sceneT}` : 'still';
-      if (key !== drawn) {
-        $('world').innerHTML = drawContent(doc, S, fr ? { frame: fr } : { resolved: placed });
-        drawn = key;
-      }
-      drawTerminals(now);
-      // A requested-change area the story draws, like the one you'd drag on the canvas.
-      const mark = Object.values(state).find((s) => s.mark)?.mark;
-      const target_ = mark && placed.find((e) => e.id === mark.id);
-      if (target_) {
-        const b = bounds(target_, S), z = view.zoom, pad = 14;
-        const k = mark.t0 ? ease(Math.min(1, (now - mark.t0) / 650)) : 1;
-        const w = (b.w + pad * 2) * k, h = (b.h + pad * 2) * k, cx = b.x - pad + w, cy = b.y - pad + h;
-        $('marks').innerHTML = `<rect x="${b.x - pad}" y="${b.y - pad}" width="${w}" height="${h}" rx="5" fill="#f59e0b" fill-opacity="0.1" stroke="#f59e0b" stroke-width="${2 / z}" stroke-dasharray="${7 / z} ${5 / z}"/>`
-          + (k < 1 || now - mark.t0 < 1000 ? `<path d="M0 0 L0 17 L4.5 13 L8 20 L11 18.5 L7.5 11.5 L13 11.5 Z" fill="#111" stroke="#fff" stroke-width="1.2" transform="translate(${cx} ${cy}) scale(${1.2 / z})"/>` : '')
-          + (k < 1 ? '' : `<circle cx="${b.x - pad}" cy="${b.y - pad}" r="${11 / z}" fill="#f59e0b"/><text x="${b.x - pad}" y="${b.y - pad}" font-size="${12 / z}" font-weight="700" fill="#fff" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif">1</text>`
-          + `<text x="${b.x - pad + 16 / z}" y="${b.y - pad - 12 / z}" font-size="${13 / z}" font-weight="600" fill="#f59e0b" font-family="system-ui, sans-serif">${mark.text}</text>`);
-      } else $('marks').innerHTML = '';
-      $('say').hidden = !fr?.say;
-      if (fr?.say && $('say').textContent !== fr.say) $('say').textContent = fr.say;
-
-      // The image sits on its slot, panned and zoomed with the canvas.
-      const slot = placed.find((e) => e.id === 'img-slot');
-      $('page').style.display = slot ? '' : 'none';
-      if (slot) {
-        const z = view.zoom, scale = (slot.width / 1200) * z;
-        Object.assign($('page').style, { width: '1200px', height: '630px', transform: `translate(${(slot.x - view.x) * z}px, ${(slot.y - view.y) * z}px) scale(${scale})` });
-      }
+      st.backgroundSize = `${24 * z}px ${24 * z}px`;
+      st.backgroundPosition = `${-v.x * z}px ${-top * z}px`;
+      const root = document.documentElement.style;
+      for (const [k, c] of Object.entries({ bg: S.background, fg: S.text, muted: S.tagText, panel: S.fill === 'transparent' ? S.background : S.fill, line: S.groupStroke, accent: S.accent, 'on-accent': S.packetText })) root.setProperty(`--${k}`, c);
+      const say = frame.say?.trim();
+      $('say').hidden = !say;
+      if (say && $('say').textContent !== say) $('say').textContent = say;
       ui();
-      requestAnimationFrame(frame);
     }
 
-    // ---- the rail, the counter, next / previous ----
-
-    const seen = new Set();
-    let uiKey = '';
-    // What the next scroll does: the next thing you ask at this stop, or the next stop.
-    function nextLabel(beat) {
-      if (beat === LAST) return '↺  Back to the start';
-      const now = BEATS[beat], next = BEATS[beat + 1];
-      if (next.stop !== now.stop) return `↓  ${String(next.stop + 1).padStart(2, '0')} · ${TOUR[next.stop].title}`;
-      const step = EXCHANGES[TOUR[now.stop].key][next.n - 1].find((x) => x.you || x.mark);
-      const said = (step.label || step.you || step.mark.text).split('\n')[0];
-      return `↓  “${said.length > 46 ? said.slice(0, 44) + '…' : said}”`;
+    // ---- the clock: runs until the next stop, then the picture holds ----
+    let last = performance.now(), drawn = null;
+    function tick(now) {
+      const dt = Math.min(64, now - last);
+      last = now;
+      if (t < stops[goal]) t = Math.min(stops[goal], t + dt);
+      if (t !== drawn) draw(), (drawn = t);
+      requestAnimationFrame(tick);
     }
-    function ui() {
-      const beat = Math.round(p), at = BEATS[beat].stop;
-      seen.add(at);
-      const key = `${beat}|${seen.size}|${styleId}`;
-      if (key === uiKey) return;
-      uiKey = key;
-      [...$('rail').children].forEach((b, i) => {
-        b.classList.toggle('on', i === at);
-        b.classList.toggle('seen', seen.has(i));
-        if (i === at) b.scrollIntoView({ block: 'nearest' });
-      });
-      $('count').textContent = `${at + 1} / ${TOUR.length}`;
-      $('next').textContent = nextLabel(beat);
-      $('prev').disabled = beat === 0;
-      if (Math.abs(p - target) < 0.01 && location.hash.slice(1) !== TOUR[at].key) history.replaceState(null, '', `#${TOUR[at].key}`);
-    }
-    $('rail').append(...TOUR.map((t, i) => {
-      const b = document.createElement('button');
-      b.innerHTML = '<i></i><span></span>';
-      b.lastChild.textContent = `${String(i + 1).padStart(2, '0')} · ${t.title}`;
-      b.onclick = () => go(firstBeat(i));
-      return b;
-    }));
-    function go(beat) {
-      target = Math.max(0, Math.min(LAST, beat));
-      returning = true;
-      closeAsk();
-    }
-    $('next').onclick = () => go(Math.round(target) === LAST ? 0 : Math.round(target) + 1);
-    $('prev').onclick = () => go(Math.round(target) - 1);
+    addEventListener('resize', draw);
 
-    // ---- input: scroll follows the path; drag looks around; Ctrl/⌘ + scroll zooms ----
-
-    let settle;
-    svg.addEventListener('wheel', (ev) => {
+    // ---- forward and back ----
+    function forward() {
+      if (t < stops[goal]) t = stops[goal]; // still playing: land this part first
+      else if (goal < LAST) goal++;
+      else (t = 0), (goal = 0); // the end: start over
+    }
+    function back() {
+      const rest = [0, ...stops].filter((s) => s < t - 1).at(-1) ?? 0;
+      t = rest;
+      goal = rest === 0 ? 0 : stops.indexOf(rest);
+    }
+    $('next').onclick = forward;
+    $('prev').onclick = back;
+    let cool = 0, acc = 0;
+    addEventListener('wheel', (ev) => {
       ev.preventDefault();
-      if (ev.ctrlKey || ev.metaKey) {
-        off.zoom = Math.min(4, Math.max(0.15, off.zoom * Math.exp(-ev.deltaY * 0.01)));
-        returning = false;
-        return;
-      }
-      target = Math.max(0, Math.min(LAST, target + (ev.deltaY + ev.deltaX * 0.5) / 700));
-      returning = true;
-      closeAsk();
-      // When the scrolling stops, land on the nearest stop.
-      clearTimeout(settle);
-      settle = setTimeout(() => (target = Math.round(target)), 160);
+      acc += ev.deltaY;
+      const now = performance.now();
+      if (Math.abs(acc) < 40 || now < cool) return;
+      (acc > 0 ? forward : back)();
+      acc = 0;
+      cool = now + 450; // one gesture, one step (trackpads keep scrolling for a while)
     }, { passive: false });
-
     addEventListener('keydown', (ev) => {
-      if (ev.target.tagName === 'TEXTAREA') return;
-      const k = ev.key, at = Math.round(target);
-      if (['ArrowDown', 'ArrowRight', 'PageDown', ' '].includes(k)) go(at + 1);
-      else if (['ArrowUp', 'ArrowLeft', 'PageUp'].includes(k)) go(at - 1);
-      else if (k === 'Home') go(0);
-      else if (k === 'End') go(LAST);
-      else if (k === 'Escape') closeAsk();
+      if (['ArrowDown', 'ArrowRight', 'PageDown', ' '].includes(ev.key)) forward();
+      else if (['ArrowUp', 'ArrowLeft', 'PageUp'].includes(ev.key)) back();
       else return;
       ev.preventDefault();
     });
-
-    const toWorld = (ev) => {
-      const r = svg.getBoundingClientRect();
-      return { x: view.x + (ev.clientX - r.left) / view.zoom, y: view.y + (ev.clientY - r.top) / view.zoom };
-    };
-    const inside = (pt, b) => pt.x >= b.x && pt.y >= b.y && pt.x <= b.x + b.w && pt.y <= b.y + b.h;
-    let drag = null;
-    svg.addEventListener('pointerdown', (ev) => {
-      if (ev.button > 0) return;
-      const id = ev.target.closest('[data-id]')?.dataset.id, pt = toWorld(ev);
-      svg.setPointerCapture(ev.pointerId);
-      // Touch: a vertical swipe moves along the tour.
-      if (ev.pointerType === 'touch') return (drag = { type: 'swipe', y: ev.clientY, x: ev.clientX, t: target, ox: off.x });
-      if (id?.startsWith('look-sty-')) return (drag = { type: 'style', id: id.slice(9) });
-      const e = id && doc.elements.find((x) => x.id === id);
-      if (e && ['grab-a', 'grab-b', 'grab-c', 'grab-wall'].includes(id)) return (drag = { type: 'box', e, sx: pt.x, sy: pt.y, x: e.x, y: e.y });
-      const rq = placed.find((x) => x.id === 'point-canvas');
-      if (rq && inside(pt, bounds(rq, S))) return (drag = { type: 'area', a: pt, b: pt });
-      drag = { type: 'pan', sx: ev.clientX, sy: ev.clientY, ox: off.x, oy: off.y };
-      returning = false;
-      svg.classList.add('panning');
+    let swipe = null;
+    svg.addEventListener('pointerdown', (ev) => (swipe = ev.clientY));
+    svg.addEventListener('pointerup', (ev) => {
+      if (swipe !== null && Math.abs(ev.clientY - swipe) > 40) (ev.clientY < swipe ? forward : back)();
+      swipe = null;
     });
-    svg.addEventListener('pointermove', (ev) => {
-      if (!drag) return;
-      const pt = toWorld(ev);
-      if (drag.type === 'swipe') target = Math.max(0, Math.min(LAST, drag.t + (drag.y - ev.clientY) / 260));
-      if (drag.type === 'pan') (off.x = drag.ox - (ev.clientX - drag.sx) / view.zoom), (off.y = drag.oy - (ev.clientY - drag.sy) / view.zoom);
-      if (drag.type === 'box') {
-        drag.e.x = Math.round(drag.x + pt.x - drag.sx);
-        drag.e.y = Math.round(drag.y + pt.y - drag.sy);
-        placed = resolve(doc, S); // arrows re-route as you drag
-        drawn = null;
-      }
-      if (drag.type === 'area') {
-        drag.b = pt;
-        drawArea(drag);
-      }
-    });
-    const endDrag = () => {
-      const d = drag;
-      drag = null;
-      svg.classList.remove('panning');
-      if (d?.type === 'swipe') target = Math.round(target), (returning = true);
-      if (d?.type === 'style') {
-        styleId = d.id;
-        store.set('giotto-docs-style', styleId);
-        applyStyle();
-      }
-      if (d?.type === 'box') placed = resolve(doc, S);
-      if (d?.type === 'area') ask(d);
-    };
-    svg.addEventListener('pointerup', endDrag);
-    svg.addEventListener('pointercancel', endDrag);
-
     $('theme').onclick = () => {
       dark = !dark;
       store.set('giotto-docs-theme', dark ? 'dark' : 'light');
-      applyStyle();
+      draw();
     };
 
-    // ---- stop 10: draw an area, get the note you'd paste to your agent (the same format as the canvas) ----
-
-    const box = (d) => ({ x: Math.min(d.a.x, d.b.x), y: Math.min(d.a.y, d.b.y), w: Math.abs(d.b.x - d.a.x), h: Math.abs(d.b.y - d.a.y) });
-    function drawArea(d) {
-      if (!d) return ($('over').innerHTML = '');
-      const r = box(d), z = view.zoom;
-      $('over').innerHTML = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="4" fill="#f59e0b" fill-opacity="0.08" stroke="#f59e0b" stroke-width="${1.6 / z}" stroke-dasharray="${6 / z} ${4 / z}"/>`;
-    }
-    let asking = null;
-    function note() {
-      const r = asking, n = Math.round;
-      const items = placed.filter((e) => !e.id.endsWith('-stop') && !e.id.endsWith('-canvas') && !e.id.startsWith('path-')).filter((e) => {
-        const b = bounds(e, S);
-        return b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h;
+    // ---- the chapters, and what the next scroll does ----
+    const seen = new Set();
+    $('rail').append(...tl.chapters.map((c, i) => {
+      const b = document.createElement('button');
+      b.innerHTML = '<i></i><span></span>';
+      b.lastChild.textContent = `${String(i + 1).padStart(2, '0')} · ${c.label}`;
+      b.onclick = () => ((t = c.start), (goal = Math.max(0, stops.findIndex((s) => s > t))));
+      return b;
+    }));
+    let uiKey = '';
+    function ui() {
+      const ch = chapterAt(t), i = tl.chapters.indexOf(ch);
+      seen.add(i);
+      // Playing: a scroll skips ahead. Resting: it plays the beat waiting here.
+      const waiting = t >= stops[goal] && goal < LAST ? scene.beats.find((b) => b.start === stops[goal] + 1) : null;
+      const label = t < stops[goal] ? '↓  Skip ahead'
+        : !waiting ? '↺  Back to the start'
+        : waiting.chapter ? `↓  ${String(tl.chapters.findIndex((c) => c.label === waiting.chapter) + 1).padStart(2, '0')} · ${waiting.chapter}`
+        : `↓  “${(waiting.label || waiting.term?.you || '').split('\n')[0]}”`;
+      const key = `${i}|${label}|${seen.size}`;
+      if (key === uiKey) return;
+      uiKey = key;
+      [...$('rail').children].forEach((b, j) => {
+        b.classList.toggle('on', j === i);
+        b.classList.toggle('seen', seen.has(j));
       });
-      const what = items.map((e) => {
-        const label = labelOf(e) ? ` "${labelOf(e).split('\n')[0]}"` : '';
-        if (isRouted(e)) return `   - ${e.type}${label} (id: ${e.id}) from ${e.start.id} to ${e.end.id}`;
-        const b = bounds(e, S);
-        return `   - ${e.type}${label} (id: ${e.id}) at x ${n(b.x)}, y ${n(b.y)}, size ${n(b.w)}×${n(b.h)}`;
-      });
-      return [`Requested changes (1) for Giotto diagram "Giotto docs" (id: docs):`, '', `1. ${$('ask-text').value.trim() || '…'}`,
-        `   Area x ${n(r.x)}..${n(r.x + r.w)}, y ${n(r.y)}..${n(r.y + r.h)}, containing:`, ...(what.length ? what : ['   (empty space)'])].join('\n');
+      $('count').textContent = `${i + 1} / ${tl.chapters.length}`;
+      $('next').textContent = label;
+      $('prev').disabled = t <= 0;
+      if (ch && location.hash.slice(1) !== slug(ch.label)) history.replaceState(null, '', `#${slug(ch.label)}`);
     }
-    function ask(d) {
-      const r = box(d);
-      if (r.w * view.zoom < 6 && r.h * view.zoom < 6) return drawArea(null);
-      asking = r;
-      $('ask-note').textContent = note();
-      $('ask-status').textContent = '';
-      const left = Math.min(innerWidth - 476, Math.max(16, (r.x + r.w - view.x) * view.zoom + 14));
-      const top = Math.min(innerHeight - 380, Math.max(16, (r.y - view.y) * view.zoom));
-      Object.assign($('ask').style, { left: `${left}px`, top: `${top}px` });
-      $('ask').hidden = false;
-      $('ask-text').select();
-    }
-    function closeAsk() {
-      $('ask').hidden = true;
-      asking = null;
-      drawArea(null);
-    }
-    $('ask-text').addEventListener('input', () => asking && ($('ask-note').textContent = note()));
-    $('ask-close').onclick = closeAsk;
-    $('ask-copy').onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(note());
-        $('ask-status').textContent = 'Copied. With Giotto, your agent gets this.';
-      } catch {
-        $('ask-status').textContent = 'Could not copy';
-      }
-    };
-
-    // ---- start: at the stop in the link, if any ----
-
-    applyStyle();
-    const startAt = TOUR.findIndex((t) => t.key === location.hash.slice(1));
-    p = target = Math.max(0, firstBeat(Math.max(0, startAt)));
-    addEventListener('resize', () => (drawn = null));
-    // Links to a stop (…/#styles) fly there, even in an open tab.
     addEventListener('hashchange', () => {
-      const i = TOUR.findIndex((t) => t.key === location.hash.slice(1));
-      if (i >= 0 && BEATS[Math.round(target)].stop !== i) go(firstBeat(i));
+      const c = tl.chapters.find((x) => slug(x.label) === location.hash.slice(1));
+      if (c && chapterAt(t) !== c) (t = c.start), (goal = Math.max(0, stops.findIndex((s) => s > t)));
     });
-    if (EXPORT) {
-      // No live tour: site/tour.js drives these to write the walkthrough as one animated SVG.
-      for (const id of ['top', 'rail', 'bottom', 'page']) $(id).style.display = 'none';
-      const api = {
-        DOC, TOUR, STORIES, EXCHANGES, BEATS, LAST, STYLES, build, withTurn, answer, drawContent, bounds, resolve, terminal, camera,
-        setDoc, getDoc: () => doc, getPlaced: () => placed, getS: () => S, styleId: () => styleId,
-        setStyle: (id) => ((styleId = id), applyStyle()),
-        size: () => svg.getBoundingClientRect(),
-      };
-      window.exportTour = async () => (await import('./tour.js')).exportTour(api);
-    } else requestAnimationFrame(frame);
+
+    draw();
+    requestAnimationFrame(tick);
   </script>
 </body>
 </html>

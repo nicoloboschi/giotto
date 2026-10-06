@@ -11,7 +11,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, newId, validId } from '../lib/edit.js';
 import { toSvg, layoutWarnings, SAMPLE } from '../lib/render.js';
-import { timeline, frameAt, sceneWarnings, forExport } from '../lib/scenes.js';
+import { timeline, frameAt, sceneWarnings, forExport, usesStage } from '../lib/scenes.js';
 import { toAnimatedSvg } from '../lib/animate.js';
 import { historyStore } from '../lib/history.js';
 import { PAGE_FORMAT, PAGE_SIZE, pageBox, pageHtml, pageWarnings } from '../lib/page.js';
@@ -256,11 +256,12 @@ function serve() {
         const { format, scene, speed, dark } = await body();
         const doc = forExport(await readDoc(id), { scene, speed });
         const style = await getStyle(await currentStyle());
-        if (format === 'animated-svg') return send(200, toAnimatedSvg(doc, style, { dark: !!dark }), 'image/svg+xml');
+        const styles = await listStyles(); // a scene can switch to any saved style
+        if (format === 'animated-svg') return send(200, toAnimatedSvg(doc, style, { dark: !!dark, styles }), 'image/svg+xml');
         const job = String(nextJob++), file = path.join(os.tmpdir(), `giotto-${process.pid}-${job}.mp4`);
         jobs.set(job, { progress: 0, done: false, error: null, file });
         import('../lib/video.js')
-          .then(({ toMp4 }) => toMp4(doc, style, file, { dark: !!dark, onProgress: (p) => (jobs.get(job).progress = p) }))
+          .then(({ toMp4 }) => toMp4(doc, style, file, { dark: !!dark, styles, onProgress: (p) => (jobs.get(job).progress = p) }))
           .then(() => (jobs.get(job).done = true), (e) => (jobs.get(job).error = e.message));
         return send(200, { job });
       }
@@ -312,7 +313,7 @@ const TOOLS = [
   {
     name: 'create_diagram',
     description: `Create a new diagram. Use this for any new topic instead of reusing an unrelated diagram. Optionally pass the first elements. ${FORMAT}`,
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, subtitle: { type: 'string' }, footer: { type: 'string' }, elements: elementsArg, legend: { type: 'object' }, scenes: { type: 'array', items: { type: 'object' } }, speed: { type: 'number' } }, required: ['title'] },
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, subtitle: { type: 'string' }, footer: { type: 'string' }, elements: elementsArg, legend: { type: 'object' }, scenes: { type: 'array', items: { type: 'object' } }, speed: { type: 'number' }, view: { type: 'object', description: 'Picture size for scenes that move the camera: {width, height}' } }, required: ['title'] },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
   {
@@ -331,10 +332,11 @@ const TOOLS = [
 - legend: what each tone means, drawn below the diagram (null removes it)
 - subtitle / footer: text for the export header and footer, when the style shows them (null removes)
 - scenes / speed: the diagram's stories, replaced as a whole (see SCENES below; null removes)
+- view: {width, height} of the picture for scenes that move the camera (default 1280×800)
 The user sees the change live. ${FORMAT}`,
     inputSchema: {
       type: 'object',
-      properties: { ...idArg, title: { type: 'string' }, subtitle: { type: ['string', 'null'] }, footer: { type: ['string', 'null'] }, scenes: { type: ['array', 'null'], items: { type: 'object' } }, speed: { type: ['number', 'null'] }, add: elementsArg, update: elementsArg, remove: { type: 'array', items: { type: 'string' } }, legend: { type: ['object', 'null'] } },
+      properties: { ...idArg, title: { type: 'string' }, subtitle: { type: ['string', 'null'] }, footer: { type: ['string', 'null'] }, scenes: { type: ['array', 'null'], items: { type: 'object' } }, speed: { type: ['number', 'null'] }, view: { type: ['object', 'null'] }, add: elementsArg, update: elementsArg, remove: { type: 'array', items: { type: 'string' } }, legend: { type: ['object', 'null'] } },
       required: ['id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -528,7 +530,7 @@ async function callTool(name, a = {}) {
   await ensureCanvas();
   if (name === 'list_diagrams') return JSON.stringify(await listDiagrams());
   if (name === 'create_diagram') {
-    const id = (a.id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer', 'scenes', 'speed'].filter((k) => a[k]).map((k) => [k, a[k]]))));
+    const id = (a.id = await createDiagram(a.title, a.elements, a.legend, Object.fromEntries(['subtitle', 'footer', 'scenes', 'speed', 'view'].filter((k) => a[k]).map((k) => [k, a[k]]))));
     const doc = await readDoc(id);
     return report(`Created "${id}" (v${(await history.latest(id))?.v ?? 1}).${seeIt(id)}`, doc, doc.elements.map((e) => e.id));
   }
@@ -556,7 +558,7 @@ async function callTool(name, a = {}) {
     if ((await readDoc(a.id)).html !== undefined) throw new Error(`"${a.id}" is a page: use edit_page.`);
     const doc = applyEdit(await readDoc(a.id), a);
     if (a.title) doc.title = a.title;
-    for (const k of ['subtitle', 'footer', 'scenes', 'speed']) if (k in a) a[k] === null ? delete doc[k] : (doc[k] = a[k]);
+    for (const k of ['subtitle', 'footer', 'scenes', 'speed', 'view']) if (k in a) a[k] === null ? delete doc[k] : (doc[k] = a[k]);
     const v = await writeDoc(a.id, doc);
     const ids = [...(a.add || []), ...(a.update || [])].map((e) => e.id);
     if (a.legend !== undefined) ids.push('_legend');
@@ -587,16 +589,17 @@ async function callTool(name, a = {}) {
       frame = frameAt(doc, sceneIndex, sc.beats[bi].end - 1, tl);
       moment = `, scene "${sc.label}" beat ${bi + 1}`;
     }
-    const svg = toSvg(doc, style, { dark, frame, sceneIndex });
+    // A moment of a scene that moves the camera is pictured the way the scene shows it: through its stage.
+    const svg = toSvg(doc, style, { dark, frame, sceneIndex, styles: await listStyles(), view: frame && usesStage(doc) ? doc.view || { width: 1280, height: 800 } : null });
     const png = await toPng(svg);
     const ext = { svg: 'svg', png: 'png', 'animated-svg': 'svg', mp4: 'mp4' }[format];
     const out = path.resolve(a.path || `${a.id ? slugify(doc.title || a.id, new Set()) : 'sample'}.${ext}`);
     let made = '';
     if (format === 'mp4') {
       const { toMp4 } = await import('../lib/video.js');
-      const r = await toMp4(played, style, out, { dark });
+      const r = await toMp4(played, style, out, { dark, styles: await listStyles() });
       made = ` (${r.seconds.toFixed(1)}s, ${r.frames} frames)`;
-    } else await fs.writeFile(out, format === 'svg' ? svg : format === 'png' ? png : toAnimatedSvg(played, style, { dark }));
+    } else await fs.writeFile(out, format === 'svg' ? svg : format === 'png' ? png : toAnimatedSvg(played, style, { dark, styles: await listStyles() }));
     const warnings = typeof a.style === 'object' && a.style ? styleWarnings(a.style) : [];
     const text = `Wrote ${out}${made} (style "${styleName}"${dark ? ', dark' : ''}${moment}). ${format === 'mp4' || format === 'animated-svg' ? 'Attached: the still diagram; use scene/beat to check single moments.' : 'The picture is attached so you can check it.'}${warnings.length ? `\n\nStyle warnings:\n- ${warnings.join('\n- ')}` : ''}`;
     // The rendered picture comes back with the result, so the agent can look at its work in one step.
@@ -671,7 +674,8 @@ async function viewOf(id) {
     const { w, total: h } = pageBox(doc, style);
     return { id, title: doc.title || id, url: linkTo(id), width: w, height: h, html: pageHtml(doc, style), htmlDark: pageHtml(doc, style, { dark: true }) };
   }
-  const draw = (dark) => (doc.scenes?.length ? toAnimatedSvg(forExport(doc), style, { dark }) : toSvg(doc, style, { dark }));
+  const styles = await listStyles();
+  const draw = (dark) => (doc.scenes?.length ? toAnimatedSvg(forExport(doc), style, { dark, styles }) : toSvg(doc, style, { dark }));
   return { id, title: doc.title || id, url: linkTo(id), svg: draw(false), svgDark: draw(true) };
 }
 

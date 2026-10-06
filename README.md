@@ -2,7 +2,7 @@
 
 Diagrams your coding agent draws for you, live. The agent (Claude Code, Codex, anything that speaks MCP) already knows your repo; Giotto gives it a canvas. You ask in your chat, the agent draws, you watch it in your browser.
 
-**[Read the docs: they're a canvas →](https://nicoloboschi.github.io/giotto/)**
+**[Read the docs →](https://nicoloboschi.github.io/giotto/)** Giotto made its own website: the docs are one Giotto diagram ([`site/giotto-docs.json`](site/giotto-docs.json)), played as you scroll. The walkthrough below is the same diagram, exported by Giotto as an animated SVG.
 
 [![A walkthrough of the docs: you ask your agent, it draws and changes the diagram live](docs/tour.svg)](https://nicoloboschi.github.io/giotto/)
 
@@ -37,7 +37,7 @@ Then ask your agent for a diagram. The first time, it sets Giotto up for you and
 - **Request changes visually:** draw areas on the canvas, write what should change in each, and copy them all as one "Requested changes" note for your agent.
 - **History:** every change is a numbered version. Look back at any of them and restore it; nothing is lost.
 - **Styles, separate from diagrams.** Diagrams say what things are; the active style decides how everything looks, including dark mode and export headers and footers. Agents make and change styles; you pick one from the gallery.
-- **Scenes:** diagrams can tell a story: packets travel along arrows, boxes fill in, a narration plays. Play them on the canvas, or export an animated SVG (plays on GitHub) or an MP4.
+- **Scenes:** diagrams can tell a story: packets travel along arrows, boxes fill in, a narration plays. Scenes can also change the diagram as they go (boxes pop in, slide, regroup), move the camera, type into a terminal, point with a cursor and switch styles: enough for a product walkthrough or a launch video. Play them on the canvas, or export an animated SVG (plays on GitHub) or an MP4.
 - **Pages:** for images that aren't diagrams (a results card, a poster, a chart), the agent writes HTML and Giotto shows it, versions it, takes your requested changes and exports it as PNG.
 - **Export** to SVG or PNG. The agent gets the picture back, along with warnings about overlaps or text that doesn't fit.
 
@@ -56,7 +56,7 @@ Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete t
 
 ## Develop
 
-The [docs](https://nicoloboschi.github.io/giotto/) are one Giotto diagram (`site/docs.js`) that `site/index.html` draws with Giotto's own renderer and tours as you scroll. `node site/build.mjs` builds them into `_site/`; they deploy on every push to `main`. The walkthrough at the top of this README (`docs/tour.svg`) is exported from the same page as one animated SVG: see `site/record-tour.cjs`.
+The [website](https://nicoloboschi.github.io/giotto/) is one Giotto diagram with one scene, `site/giotto-docs.json`, written by `node site/make-docs.mjs` (which also exports it to `docs/tour.svg` with Giotto's animated export). `site/index.html` is a small player: it draws each moment with Giotto's renderer and plays the scene up to the next `wait` beat as you scroll. `node site/build.mjs` builds the site into `_site/`; it deploys on every push to `main`.
 
 ```sh
 node bin/giotto.js      # canvas

@@ -81,6 +81,28 @@ A diagram can carry `scenes`: short stories played on the canvas (tabs, play, 1�
 - Set them with `create_diagram` / `edit_diagram` (`scenes`, `speed`; scenes are replaced as a whole). Warnings flag unknown arrow or box ids.
 - Exporting a diagram with scenes: `svg` plays them in one self-contained file (GitHub, docs), `mp4` makes a video. `scene` picks one (default all, in order), `speed` sets the pace (2 = twice as fast). To check a single moment, pass `scene` + `beat` (svg or png) and look at the returned picture.
 
+### Walkthroughs and launch videos: scenes that change the diagram
+
+Beats can do more than send packets. With these, one diagram becomes a guided walkthrough, a product demo or a launch video (Giotto's own website is one: `site/giotto-docs.json`):
+
+```json
+{ "chapter": "Ask for a diagram", "focus": "ask-stop", "wait": true, "ms": 1400 },
+{ "term": { "id": "ask-term", "you": "How does login work? Draw it." }, "ms": 2200 },
+{ "term": { "id": "ask-term", "working": "Drawing in Giotto…" }, "edges": { "from": "ask-term", "to": "ask-canvas" }, "ms": 1000 },
+{ "edit": { "add": [...], "update": [...], "remove": [...] }, "term": { "id": "ask-term", "agent": "Here’s the flow." }, "ms": 2000 },
+{ "pointer": { "area": "auth", "text": "Split this in two" }, "ms": 1600 },
+{ "style": "paper", "ms": 1500 }
+```
+
+- `edit` changes the diagram mid-scene, like `edit_diagram`: removed things fade, moved ones slide, new ones pop in one by one, new arrows draw. Edits add up through the scene.
+- `focus` (an id, ids, or null for everything) flies the camera there. Give the diagram a `view` ({width, height}) for the picture size.
+- `term` types into a `terminal` element (`you`), shows a spinner (`working`) and the reply (`agent`).
+- `edges` can be `{from, to, data}`: a packet between any two elements.
+- `pointer` drags out a requested-change area (`area`, `text`) or holds an element (`drag`; move it with an `edit` next); null clears it.
+- `style` switches the look from that beat on. `chapter` titles a part; `wait` marks where a scroll-driven player pauses.
+- Elements for these: `{"type": "terminal", "title"}` (a coding agent's terminal) and `{"type": "image", "href": "data:…", "width", "height"}`.
+- Export as before: `svg` is one looping animated picture (it plays on GitHub), `mp4` a video.
+
 ## Styles: how everything looks
 
 Diagrams say *what* is there; the active style decides *how it looks*. One style applies to every diagram; the user picks one from a gallery and can view it light or dark.
