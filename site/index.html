@@ -13,9 +13,11 @@
     :root { --bg: #fbfaf7; --fg: #1f2937; --muted: #64748b; --panel: #ffffff; --line: #e4e0d6; --accent: #2563eb; --on-accent: #fff; }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-    #stage { position: fixed; inset: 0; touch-action: none; }
-    #cv { position: absolute; inset: 0; width: 100%; height: 100%; user-select: none; }
-    #world { transform-origin: 0 0; will-change: transform; }
+    #stage { position: fixed; inset: 0; touch-action: none; overflow: hidden; user-select: none; }
+    /* The world is one GPU layer: the camera moves it without repainting anything. Each stop is its own SVG in it. */
+    #world { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0; will-change: transform; }
+    #world > svg { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; }
+    #grid { position: absolute; left: -4000px; top: -4000px; width: 16000px; height: 12000px; background-size: 24px 24px; background-position: 4000px 4000px; }
     .chrome { position: fixed; z-index: 5; display: flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(8px);
       border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.08); }
     #top { left: 16px; top: 16px; padding: 7px 8px 7px 14px; }
@@ -43,7 +45,7 @@
   </style>
 </head>
 <body>
-  <div id="stage"><svg id="cv" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Giotto's docs: one Giotto diagram, played"><g id="world"></g></svg></div>
+  <div id="stage" role="img" aria-label="Giotto's docs: one Giotto diagram, played"><div id="world"><div id="grid"></div></div></div>
   <div id="top" class="chrome">
     <b><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Giotto</b>
     <a class="src" href="giotto-docs.json" title="This page is this one Giotto diagram, played">the diagram</a>
@@ -65,11 +67,11 @@
     // terminals, the edits, the camera) is in giotto-docs.json, which Giotto also exports as docs/tour.svg.
     import { drawContent, drawOverlays, resolveFrame, cameraView, styleOf, bounds, defs } from './lib/render.js';
     import { DEFAULT_STYLE, resolveStyle } from './lib/styles.js';
-    import { timeline, frameAt } from './lib/scenes.js';
+    import { timeline, frameAt, CAMERA } from './lib/scenes.js';
     import { STYLES } from './styles.js';
 
     const $ = (id) => document.getElementById(id);
-    const svg = $('cv');
+    const svg = $('stage');
     const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
     const doc = await (await fetch('./giotto-docs.json')).json();
     const styles = { default: DEFAULT_STYLE, ...STYLES };
@@ -86,12 +88,19 @@
     if (linked) (t = linked.start), (goal = Math.max(0, stops.findIndex((s) => s > t)));
 
     // ---- one moment, drawn ----
-    // Smooth means doing almost nothing per frame: layouts are cached (lib/render.js), the camera is one CSS
-    // transform, and the drawing is split into one layer per stop: a frame redraws only the stops its beats
-    // touch, and stops far off screen are hidden. Shadows are flat copies, not blur filters.
+    // Smooth, on phones too, means the GPU does the moving: the world is one composited layer that the camera
+    // transforms (no repaint while flying), each stop is its own SVG in it, and a frame redraws only the stops its
+    // beats touch. Layouts are cached (lib/render.js), stops far off screen are hidden, shadows are flat copies.
     const svgNS = 'http://www.w3.org/2000/svg';
     const world = $('world'), layers = new Map(), drawnMarkup = new Map();
-    const overlay = document.createElementNS(svgNS, 'g');
+    const newSvg = () => {
+      const g = document.createElementNS(svgNS, 'svg');
+      g.setAttribute('viewBox', '0 0 1 1'); // 1 unit = 1 px of the world: the drawing overflows it at world coordinates
+      return g;
+    };
+    const overlay = newSvg();
+    overlay.style.willChange = 'transform'; // packets and the pointer move every frame: their own GPU layer
+    world.append(overlay);
     const styleCache = new Map();
     const styleFor = (frame) => {
       const id = `${frame?.style?.id || 'default'}|${dark}`;
@@ -100,26 +109,22 @@
     };
     // Which stop (top-level group) each element belongs to; links between stops go in a layer of their own.
     const roots = new WeakMap();
-    function rootsOf(els) {
+    function rootsOf(els, S) {
       if (roots.has(els)) return roots.get(els);
-      const byId = Object.fromEntries(els.map((e) => [e.id, e])), parent = {};
+      const parent = {};
       for (const g of els) if (g.type === 'group') for (const c of g.children || []) parent[c] ??= g.id;
       const top = (id) => {
         let r = id;
         for (let i = 0; parent[r] && i < 50; i++) r = parent[r];
         return r;
       };
-      const of = new Map();
-      for (const e of els) {
-        const r = e.start ? (top(e.start.id) === top(e.end.id) ? top(e.start.id) : '_links') : e.type === 'note' && e.attachTo ? top(e.attachTo) : top(e.id);
-        of.set(e.id, r);
-      }
-      const groups = new Map();
+      const of = new Map(), groups = new Map(), box = new Map();
+      // Terminals get a layer of their own: they change with every typed letter, and nothing else should repaint then.
+      for (const e of els) of.set(e.id, e.type === 'terminal' ? `term:${e.id}` : e.start ? (top(e.start.id) === top(e.end.id) ? top(e.start.id) : '_links') : e.type === 'note' && e.attachTo ? top(e.attachTo) : top(e.id));
       for (const e of els) (groups.get(of.get(e.id)) || groups.set(of.get(e.id), []).get(of.get(e.id))).push(e);
-      const box = new Map();
       for (const [r, list] of groups) {
-        const bs = list.filter((e) => e.width !== undefined || e.points).map((e) => bounds(e, styleCache.values().next().value));
-        if (bs.length) box.set(r, { x0: Math.min(...bs.map((b) => b.x)), y0: Math.min(...bs.map((b) => b.y)), x1: Math.max(...bs.map((b) => b.x + b.w)), y1: Math.max(...bs.map((b) => b.y + b.h)) });
+        const bs = list.map((e) => bounds(e, S));
+        box.set(r, { x0: Math.min(...bs.map((b) => b.x)), y0: Math.min(...bs.map((b) => b.y)), x1: Math.max(...bs.map((b) => b.x + b.w)), y1: Math.max(...bs.map((b) => b.y + b.h)) });
       }
       const out = { of, groups, box };
       roots.set(els, out);
@@ -127,13 +132,13 @@
     }
     const layer = (r) => {
       if (!layers.has(r)) {
-        const g = document.createElementNS(svgNS, 'g');
-        r === '_links' ? world.prepend(g) : world.insertBefore(g, overlay);
+        const g = newSvg();
+        if (r.startsWith('term:')) g.style.willChange = 'transform'; // its own GPU layer
+        r === '_links' ? $('grid').after(g) : world.insertBefore(g, overlay);
         layers.set(r, g);
       }
       return layers.get(r);
     };
-    world.append(overlay);
     // The stops a beat changes: what it edits, types into, fills, lights, sends packets along.
     function touched(b, of) {
       const ids = [...(b.edit?.add || []).map((e) => e.id), ...(b.edit?.update || []).map((e) => e.id), ...(b.edit?.remove || []), b.term?.id, ...Object.keys(b.show || {}), ...(b.light || [])];
@@ -141,56 +146,164 @@
       return new Set(ids.filter(Boolean).map((id) => of.get(id)).filter(Boolean));
     }
 
+    // On a tall screen a whole stop is too small to read, so the camera follows the action inside it: the terminal
+    // while you type and the agent works, the diagram while it changes, the whole stop when a chapter starts.
+    const focusOf = [];
+    let stopFocus = null;
+    for (const [i, b] of scene.beats.entries()) {
+      if ('focus' in b) stopFocus = b.focus;
+      const along = [b.edges].flat().some((h) => h && !h.from); // packets along arrows: the whole picture
+      focusOf[i] = 'focus' in b ? b.focus
+        : b.pointer?.area ? b.pointer.area
+        : b.pointer?.drag || along ? stopFocus
+        : b.edit ? b.edit.update?.find((u) => u.children)?.id ?? stopFocus
+        : b.term ? b.term.id
+        : focusOf[i - 1];
+    }
+    function portrait(frame, aspect) {
+      if (aspect >= 1 || !frame) return frame;
+      const i = frame.beat, b = scene.beats[i];
+      const prev = focusOf[i - 1];
+      return { ...frame, camera: { focus: focusOf[i], prev: prev === focusOf[i] ? undefined : prev, ms: t - b.start } };
+    }
+    // An edit landing, played by the browser: new things pop in one by one, moved ones slide from where they were,
+    // removed ones fade out, new arrows draw themselves. `ms`: how far into the landing we already are.
+    const nodeOf = (g, id) => g.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    function land(g, els, prevEls, ms, S) {
+      const was = new Map(prevEls.map((e) => [e.id, e]));
+      const fresh = els.filter((e) => !was.has(e.id) && !e.start);
+      const step = Math.min(130, 520 / Math.max(1, fresh.length)), arrowsAt = 80 + fresh.length * step;
+      const play = (el, frames, delay, dur, easing = 'cubic-bezier(.2,.7,.3,1)') => el?.animate(frames, { delay: delay - ms, duration: dur, easing, fill: 'backwards' });
+      for (const e of els) {
+        const el = nodeOf(g, e.id), p = was.get(e.id);
+        if (!el) continue;
+        el.style.transformBox = 'fill-box';
+        el.style.transformOrigin = 'center';
+        if (!p && !e.start) {
+          const d = 80 + fresh.indexOf(e) * step;
+          play(el, e.type === 'group' ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(16px) scale(.72)' }, { opacity: 1, transform: 'translateY(-2px) scale(1.04)', offset: 0.65 }, { opacity: 1, transform: 'none' }], d, 460);
+        } else if (!p) {
+          play(el, [{ opacity: 0 }, { opacity: 1 }], arrowsAt, 200);
+          const line = el.querySelector('.g-arrow');
+          if (line && !e.strokeStyle) line.setAttribute('pathLength', '1'), play(line, [{ strokeDasharray: '1', strokeDashoffset: 1 }, { strokeDasharray: '1', strokeDashoffset: 0 }], arrowsAt, 420, 'ease-out');
+        } else if (!e.start && e.type !== 'group' && (p.x !== e.x || p.y !== e.y)) {
+          play(el, [{ transform: `translate(${p.x - e.x}px, ${p.y - e.y}px)` }, { transform: 'none' }], 0, 620, 'cubic-bezier(.3,.7,.2,1)');
+        } else if (e.start && JSON.stringify(p.points) !== JSON.stringify(e.points)) play(el, [{ opacity: 0 }, { opacity: 1 }], 0, 500);
+      }
+      // Removed: a copy of the old drawing fades out on top, then goes.
+      const gone = prevEls.filter((e) => !els.some((x) => x.id === e.id));
+      if (gone.length && ms < 300) {
+        const ghost = document.createElementNS(svgNS, 'g');
+        ghost.innerHTML = drawContent(doc, S, { resolved: gone, overlays: false });
+        g.append(ghost);
+        ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300 - ms, fill: 'forwards' }).onfinish = () => ghost.remove();
+      }
+    }
+    // Typing: when only the line being typed changed, change just that text and the cursor.
+    function typeLine(g, e) {
+      const state = e?._term, key = JSON.stringify(state?.turns || []);
+      const typed = g.querySelector('.t-typed'), cursor = g.querySelector('.t-cursor');
+      if (!typed || g.dataset.turns !== key) return (g.dataset.turns = key), false;
+      const all = state?.typing || '', cols = Math.floor((e.width - 50) / 8.15); // as the renderer trims it
+      const text = all.length > cols - 2 ? '…' + all.slice(-(cols - 3)) : all;
+      if (typed.textContent !== text) {
+        typed.textContent = text;
+        cursor?.setAttribute('x', +typed.getAttribute('x') + text.length * 8.15);
+      }
+      return true;
+    }
     let lastT = -1, lastS = null, lastEls = null;
+    // The camera: aimed once per beat at where that beat ends up, and flown there by the browser's compositor (a Web
+    // Animation of one transform). It runs on the GPU thread, smooth whatever the page is doing, and the layer is drawn
+    // once at the sharpest zoom the flight reaches; nothing is repainted while flying.
+    let camKey = '', camAnim = null, camFrom = null, camTo = null;
+    const camCss = (c) => `translate3d(${(-c.x * c.z).toFixed(2)}px, ${(-c.top * c.z).toFixed(2)}px, 0) scale(${c.z.toFixed(5)})`;
+    function aim(frame, els, S, W, H) {
+      const v = cameraView(frame, els, S, W / H), z = W / v.w;
+      return { x: v.x, top: v.y - 18 / z, z };
+    }
     let screen = svg.getBoundingClientRect(); // measured once (and on resize): measuring every frame forces a layout
     function draw() {
       const frame = frameAt(doc, 0, t, tl);
       const S = styleFor(frame);
       const els = resolveFrame(doc, S, frame);
       const r = screen, wide = r.width > 760;
-      // The camera, fitted to the space left free by the chapters and the bottom bar: one transform.
+      // The camera, fitted to the space left free by the chapters and the bottom bar: one GPU transform.
       const W = r.width - (wide ? 220 : 0), H = r.height - 90;
-      const v = cameraView(frame, els, S, W / H), z = W / v.w, top = v.y - 18 / z;
-      world.style.transform = `translate(${-v.x * z}px, ${-top * z}px) scale(${z})`;
-      const st = $('stage').style;
-      st.backgroundSize = `${24 * z}px ${24 * z}px`;
-      st.backgroundPosition = `${-v.x * z}px ${-top * z}px`;
+      const pf = portrait(frame, W / H), b = scene.beats[frame.beat];
+      // Where this beat ends up (its edits landed), so the camera doesn't drift while things grow.
+      const endFrame = frameAt(doc, 0, b.end - 1, tl), endEls = resolveFrame(doc, S, endFrame);
+      const focus = pf?.camera ? { ...pf.camera, ms: 1e9 } : undefined;
+      const to = aim({ ...pf, camera: focus }, endEls, S, W, H);
+      const key = camCss(to);
+      if (key !== camKey) {
+        const jumped = !camTo || S !== lastS || t < lastT || t - lastT > 400;
+        camAnim?.cancel();
+        if (jumped) world.style.transform = key;
+        else {
+          // From wherever it is now. A new focus flies (pulling back on the way); anything else glides.
+          const now = getComputedStyle(world).transform;
+          const flying = pf?.camera && pf.camera.prev !== undefined && pf.camera.ms < CAMERA;
+          const left = flying ? CAMERA - pf.camera.ms : 650;
+          const frames = [{ transform: now === 'none' ? camCss(camTo) : now }];
+          if (flying) for (let i = 1; i <= 12; i++) frames.push({ transform: camCss(aim({ ...pf, camera: { ...pf.camera, ms: pf.camera.ms + (left * i) / 12 } }, endEls, S, W, H)) });
+          else frames.push({ transform: key });
+          frames[frames.length - 1] = { transform: key };
+          world.style.transform = key; // where it rests when the flight is done
+          camAnim = world.animate(frames, { duration: Math.max(200, left), easing: flying ? 'linear' : 'cubic-bezier(.4,0,.2,1)' });
+        }
+        camFrom = camTo || to;
+        camTo = to;
+        camKey = key;
+      }
 
-      const { of, groups, box } = rootsOf(els);
+      resolveFrame(doc, S, frame); // the camera looked at the beat's end: put this moment's terminals back (shared layout)
+      const { of, groups, box } = rootsOf(els, S);
       // Redraw everything after a jump or a new look; otherwise only what this beat (or one landing) touches.
-      const jump = S !== lastS || t < lastT || t - lastT > 400 || els !== lastEls && !frame.morph && !scene.beats.some((b) => b.edit && b.start > lastT && b.start <= t);
+      const jump = S !== lastS || t < lastT || t - lastT > 400 || (els !== lastEls && !frame.morph && !scene.beats.some((b) => b.edit && b.start > lastT && b.start <= t));
       let dirty;
       if (jump) dirty = new Set(groups.keys());
       else {
         dirty = new Set();
-        for (const b of scene.beats) if (b.start <= t && b.end + 1200 >= lastT && b.start <= t) for (const rt of touched(b, of)) dirty.add(rt);
+        for (const b of scene.beats) if (b.start <= t && b.end + 1200 >= lastT) for (const rt of touched(b, of)) dirty.add(rt);
       }
       if (S !== lastS) {
-        st.backgroundColor = S.background;
-        st.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.3px, transparent 1.3px)` : 'none';
+        $('stage').style.backgroundColor = S.background;
+        // A tiny repeating image: much cheaper to paint than a gradient, which matters on phones.
+        $('grid').style.backgroundImage = S.grid ? `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><circle cx='1.5' cy='1.5' r='1.3' fill='${S.grid}'/></svg>`)}")` : 'none';
         const root = document.documentElement.style;
         for (const [k, c] of Object.entries({ bg: S.background, fg: S.text, muted: S.tagText, panel: S.fill === 'transparent' ? S.background : S.fill, line: S.groupStroke, accent: S.accent, 'on-accent': S.packetText })) root.setProperty(`--${k}`, c);
       }
-      const prev = frame.morph ? resolveFrame(doc, S, { ...frame, doc: frame.morph.from }) : null;
-      const prevOf = prev && rootsOf(prev).of;
+      // Each stop is drawn as it ends up; an edit landing is then played by the browser on those elements (pops,
+      // slides, arrows drawing, removed things fading) instead of being redrawn every frame. Typing only touches the
+      // typed line.
+      const prev = frame.morph && !jump ? resolveFrame(doc, S, { ...frame, doc: frame.morph.from }) : null;
+      const settled = { ...frame, morph: undefined };
       for (const rt of dirty) {
-        const subset = groups.get(rt) || [];
-        const markup = drawContent(doc, S, { frame, resolved: subset, prev: prev && prev.filter((e) => prevOf.get(e.id) === rt), overlays: false });
-        if (drawnMarkup.get(rt) !== markup) (layer(rt).innerHTML = markup), drawnMarkup.set(rt, markup);
+        const g = layer(rt), els2 = groups.get(rt) || [];
+        if (rt.startsWith('term:') && typeLine(g, els2[0])) continue;
+        const markup = drawContent(doc, S, { frame: settled, resolved: els2, overlays: false });
+        if (drawnMarkup.get(rt) === markup) continue;
+        g.innerHTML = markup;
+        drawnMarkup.set(rt, markup);
+        if (prev) land(g, els2, prev.filter((e) => rootsOf(prev, S).of.get(e.id) === rt), frame.morph.ms, S);
       }
       for (const [rt, g] of layers) if (!groups.has(rt) && drawnMarkup.get(rt)) (g.innerHTML = ''), drawnMarkup.set(rt, '');
       // Lit boxes, packets and the pointer: small, redrawn while they move.
       const over = frame.active.length || frame.light.size || frame.pointer ? drawOverlays(frame, Object.fromEntries(els.map((e) => [e.id, e])), S) : '';
       if (over !== drawnMarkup.get('_over')) (overlay.innerHTML = over), drawnMarkup.set('_over', over);
       // Stops far off screen aren't painted at all.
-      const vw = r.width / z, vh = r.height / z, mx = vw * 0.6, my = vh * 0.6;
+      const near = (c, b) => {
+        const vw = r.width / c.z, vh = r.height / c.z, mx = vw * 0.5, my = vh * 0.5;
+        return b.x1 > c.x - mx && b.x0 < c.x + vw + mx && b.y1 > c.top - my && b.y0 < c.top + vh + my;
+      };
       for (const [rt, g] of layers) {
         const b = box.get(rt);
-        const visible = !b || rt === '_links' || (b.x1 > v.x - mx && b.x0 < v.x + vw + mx && b.y1 > top - my && b.y0 < top + vh + my);
-        g.style.display = visible ? '' : 'none';
+        const show = !b || rt === '_links' || near(camTo, b) || near(camFrom, b);
+        if ((g.style.display !== 'none') !== show) g.style.display = show ? '' : 'none';
       }
       const say = frame.say?.trim();
-      $('say').hidden = !say;
+      if ($('say').hidden !== !say) $('say').hidden = !say;
       if (say && $('say').textContent !== say) $('say').textContent = say;
       lastT = t;
       lastS = S;
