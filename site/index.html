@@ -321,18 +321,25 @@
     function tick(now) {
       const dt = Math.min(64, now - last);
       last = now;
-      if (t < stops[goal]) t = Math.min(stops[goal], t + dt);
+      if (t < stops[goal]) t = Math.min(stops[goal], t + dt * rate);
+      if (t >= stops[goal]) rate = 1;
       if (t !== drawn) draw(), (drawn = t);
       requestAnimationFrame(tick);
     }
 
     // ---- forward and back ----
+    let rate = 1; // a scroll while a part plays speeds it up, so it still plays; a second one skips to its end
     function forward() {
-      if (t < stops[goal]) t = stops[goal]; // still playing: land this part first
-      else if (goal < LAST) goal++;
+      if (t < stops[goal]) {
+        if (rate === 1) rate = 3;
+        else t = stops[goal];
+        return;
+      }
+      if (goal < LAST) goal++;
       else (t = 0), (goal = 0); // the end: start over
     }
     function back() {
+      rate = 1;
       const rest = [0, ...stops].filter((s) => s < t - 1).at(-1) ?? 0;
       t = rest;
       goal = rest === 0 ? 0 : stops.indexOf(rest);
@@ -383,11 +390,11 @@
       seen.add(i);
       // Playing: a scroll skips ahead. Resting: it plays the beat waiting here.
       const waiting = t >= stops[goal] && goal < LAST ? scene.beats.find((b) => b.start === stops[goal] + 1) : null;
-      const label = t < stops[goal] ? '↓  Skip ahead'
+      const label = t < stops[goal] ? (rate === 1 ? '↓  Faster' : '↓  Skip ahead')
         : !waiting ? '↺  Back to the start'
         : waiting.chapter ? `↓  ${String(tl.chapters.findIndex((c) => c.label === waiting.chapter) + 1).padStart(2, '0')} · ${waiting.chapter}`
         : `↓  “${(waiting.label || waiting.term?.you || '').split('\n')[0]}”`;
-      const key = `${i}|${label}|${seen.size}`;
+      const key = `${i}|${label}|${seen.size}|${rate}`;
       if (key === uiKey) return;
       uiKey = key;
       [...$('rail').children].forEach((b, j) => {
