@@ -15,6 +15,7 @@
     html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
     #stage { position: fixed; inset: 0; touch-action: none; }
     #cv { position: absolute; inset: 0; width: 100%; height: 100%; user-select: none; }
+    #world { transform-origin: 0 0; will-change: transform; }
     .chrome { position: fixed; z-index: 5; display: flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(8px);
       border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.08); }
     #top { left: 16px; top: 16px; padding: 7px 8px 7px 14px; }
@@ -62,7 +63,7 @@
     // A small player for a Giotto diagram with scenes. It draws each moment with Giotto's own renderer (lib/);
     // scrolling plays the scene up to the next beat marked "wait". Everything on the page (the stops, the
     // terminals, the edits, the camera) is in giotto-docs.json, which Giotto also exports as docs/tour.svg.
-    import { drawContent, resolveFrame, cameraView, styleOf } from './lib/render.js';
+    import { drawContent, drawOverlays, resolveFrame, cameraView, styleOf, bounds, defs } from './lib/render.js';
     import { DEFAULT_STYLE, resolveStyle } from './lib/styles.js';
     import { timeline, frameAt } from './lib/scenes.js';
     import { STYLES } from './styles.js';
@@ -85,26 +86,115 @@
     if (linked) (t = linked.start), (goal = Math.max(0, stops.findIndex((s) => s > t)));
 
     // ---- one moment, drawn ----
+    // Smooth means doing almost nothing per frame: layouts are cached (lib/render.js), the camera is one CSS
+    // transform, and the drawing is split into one layer per stop: a frame redraws only the stops its beats
+    // touch, and stops far off screen are hidden. Shadows are flat copies, not blur filters.
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const world = $('world'), layers = new Map(), drawnMarkup = new Map();
+    const overlay = document.createElementNS(svgNS, 'g');
+    const styleCache = new Map();
+    const styleFor = (frame) => {
+      const id = `${frame?.style?.id || 'default'}|${dark}`;
+      if (!styleCache.has(id)) styleCache.set(id, { ...resolveStyle(styleOf(frame, DEFAULT_STYLE, styles), dark), flatShadows: true });
+      return styleCache.get(id);
+    };
+    // Which stop (top-level group) each element belongs to; links between stops go in a layer of their own.
+    const roots = new WeakMap();
+    function rootsOf(els) {
+      if (roots.has(els)) return roots.get(els);
+      const byId = Object.fromEntries(els.map((e) => [e.id, e])), parent = {};
+      for (const g of els) if (g.type === 'group') for (const c of g.children || []) parent[c] ??= g.id;
+      const top = (id) => {
+        let r = id;
+        for (let i = 0; parent[r] && i < 50; i++) r = parent[r];
+        return r;
+      };
+      const of = new Map();
+      for (const e of els) {
+        const r = e.start ? (top(e.start.id) === top(e.end.id) ? top(e.start.id) : '_links') : e.type === 'note' && e.attachTo ? top(e.attachTo) : top(e.id);
+        of.set(e.id, r);
+      }
+      const groups = new Map();
+      for (const e of els) (groups.get(of.get(e.id)) || groups.set(of.get(e.id), []).get(of.get(e.id))).push(e);
+      const box = new Map();
+      for (const [r, list] of groups) {
+        const bs = list.filter((e) => e.width !== undefined || e.points).map((e) => bounds(e, styleCache.values().next().value));
+        if (bs.length) box.set(r, { x0: Math.min(...bs.map((b) => b.x)), y0: Math.min(...bs.map((b) => b.y)), x1: Math.max(...bs.map((b) => b.x + b.w)), y1: Math.max(...bs.map((b) => b.y + b.h)) });
+      }
+      const out = { of, groups, box };
+      roots.set(els, out);
+      return out;
+    }
+    const layer = (r) => {
+      if (!layers.has(r)) {
+        const g = document.createElementNS(svgNS, 'g');
+        r === '_links' ? world.prepend(g) : world.insertBefore(g, overlay);
+        layers.set(r, g);
+      }
+      return layers.get(r);
+    };
+    world.append(overlay);
+    // The stops a beat changes: what it edits, types into, fills, lights, sends packets along.
+    function touched(b, of) {
+      const ids = [...(b.edit?.add || []).map((e) => e.id), ...(b.edit?.update || []).map((e) => e.id), ...(b.edit?.remove || []), b.term?.id, ...Object.keys(b.show || {}), ...(b.light || [])];
+      for (const h of b.hops || []) ids.push(h.edge, h.from, h.to);
+      return new Set(ids.filter(Boolean).map((id) => of.get(id)).filter(Boolean));
+    }
+
+    let lastT = -1, lastS = null, lastEls = null;
+    let screen = svg.getBoundingClientRect(); // measured once (and on resize): measuring every frame forces a layout
     function draw() {
       const frame = frameAt(doc, 0, t, tl);
-      const S = resolveStyle(styleOf(frame, DEFAULT_STYLE, styles), dark);
+      const S = styleFor(frame);
       const els = resolveFrame(doc, S, frame);
-      const r = svg.getBoundingClientRect(), wide = r.width > 760;
-      // The camera, fitted to the space left free by the chapters and the bottom bar.
+      const r = screen, wide = r.width > 760;
+      // The camera, fitted to the space left free by the chapters and the bottom bar: one transform.
       const W = r.width - (wide ? 220 : 0), H = r.height - 90;
       const v = cameraView(frame, els, S, W / H), z = W / v.w, top = v.y - 18 / z;
-      svg.setAttribute('viewBox', `${v.x} ${top} ${r.width / z} ${r.height / z}`);
-      $('world').innerHTML = drawContent(doc, S, { frame, resolved: els });
+      world.style.transform = `translate(${-v.x * z}px, ${-top * z}px) scale(${z})`;
       const st = $('stage').style;
-      st.backgroundColor = S.background;
-      st.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.3px, transparent 1.3px)` : 'none';
       st.backgroundSize = `${24 * z}px ${24 * z}px`;
       st.backgroundPosition = `${-v.x * z}px ${-top * z}px`;
-      const root = document.documentElement.style;
-      for (const [k, c] of Object.entries({ bg: S.background, fg: S.text, muted: S.tagText, panel: S.fill === 'transparent' ? S.background : S.fill, line: S.groupStroke, accent: S.accent, 'on-accent': S.packetText })) root.setProperty(`--${k}`, c);
+
+      const { of, groups, box } = rootsOf(els);
+      // Redraw everything after a jump or a new look; otherwise only what this beat (or one landing) touches.
+      const jump = S !== lastS || t < lastT || t - lastT > 400 || els !== lastEls && !frame.morph && !scene.beats.some((b) => b.edit && b.start > lastT && b.start <= t);
+      let dirty;
+      if (jump) dirty = new Set(groups.keys());
+      else {
+        dirty = new Set();
+        for (const b of scene.beats) if (b.start <= t && b.end + 1200 >= lastT && b.start <= t) for (const rt of touched(b, of)) dirty.add(rt);
+      }
+      if (S !== lastS) {
+        st.backgroundColor = S.background;
+        st.backgroundImage = S.grid ? `radial-gradient(${S.grid} 1.3px, transparent 1.3px)` : 'none';
+        const root = document.documentElement.style;
+        for (const [k, c] of Object.entries({ bg: S.background, fg: S.text, muted: S.tagText, panel: S.fill === 'transparent' ? S.background : S.fill, line: S.groupStroke, accent: S.accent, 'on-accent': S.packetText })) root.setProperty(`--${k}`, c);
+      }
+      const prev = frame.morph ? resolveFrame(doc, S, { ...frame, doc: frame.morph.from }) : null;
+      const prevOf = prev && rootsOf(prev).of;
+      for (const rt of dirty) {
+        const subset = groups.get(rt) || [];
+        const markup = drawContent(doc, S, { frame, resolved: subset, prev: prev && prev.filter((e) => prevOf.get(e.id) === rt), overlays: false });
+        if (drawnMarkup.get(rt) !== markup) (layer(rt).innerHTML = markup), drawnMarkup.set(rt, markup);
+      }
+      for (const [rt, g] of layers) if (!groups.has(rt) && drawnMarkup.get(rt)) (g.innerHTML = ''), drawnMarkup.set(rt, '');
+      // Lit boxes, packets and the pointer: small, redrawn while they move.
+      const over = frame.active.length || frame.light.size || frame.pointer ? drawOverlays(frame, Object.fromEntries(els.map((e) => [e.id, e])), S) : '';
+      if (over !== drawnMarkup.get('_over')) (overlay.innerHTML = over), drawnMarkup.set('_over', over);
+      // Stops far off screen aren't painted at all.
+      const vw = r.width / z, vh = r.height / z, mx = vw * 0.6, my = vh * 0.6;
+      for (const [rt, g] of layers) {
+        const b = box.get(rt);
+        const visible = !b || rt === '_links' || (b.x1 > v.x - mx && b.x0 < v.x + vw + mx && b.y1 > top - my && b.y0 < top + vh + my);
+        g.style.display = visible ? '' : 'none';
+      }
       const say = frame.say?.trim();
       $('say').hidden = !say;
       if (say && $('say').textContent !== say) $('say').textContent = say;
+      lastT = t;
+      lastS = S;
+      lastEls = els;
       ui();
     }
 
@@ -117,7 +207,6 @@
       if (t !== drawn) draw(), (drawn = t);
       requestAnimationFrame(tick);
     }
-    addEventListener('resize', draw);
 
     // ---- forward and back ----
     function forward() {
@@ -159,6 +248,7 @@
       store.set('giotto-docs-theme', dark ? 'dark' : 'light');
       draw();
     };
+    addEventListener('resize', () => ((screen = svg.getBoundingClientRect()), (lastS = null), draw()));
 
     // ---- the chapters, and what the next scroll does ----
     const seen = new Set();
