@@ -44,12 +44,41 @@
     #search:focus { border-color: var(--accent); }
     .btn { display: inline-flex; align-items: center; gap: 6px; height: 29px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; background: var(--bg); cursor: pointer; white-space: nowrap; }
     .btn:hover { background: var(--hover); }
-    .menu { position: absolute; right: 10px; top: 55px; z-index: 6; min-width: 190px; padding: 4px; display: grid;
-      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
-    .menu[hidden] { display: none; }
-    .menu button { border: 0; border-radius: 5px; padding: 7px 10px; background: transparent; cursor: pointer; text-align: left; color: var(--fg); }
-    .menu button:hover { background: var(--hover); }
-    .menu button small { color: var(--muted); margin-left: 6px; }
+    #export-dlg { width: min(1080px, calc(100vw - 40px)); height: min(760px, calc(100vh - 40px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--fg); }
+    #export-dlg::backdrop { background: rgba(0,0,0,.4); }
+    #export-dlg form { display: flex; flex-direction: column; height: 100%; }
+    #export-dlg [hidden] { display: none !important; }
+    .xhead { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .xhead strong { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xhead button { width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; }
+    .xhead button:hover { background: var(--hover); color: var(--fg); }
+    .xbody { flex: 1; min-height: 0; display: flex; }
+    #x-formats { width: 190px; flex: none; padding: 8px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+    #x-formats button { border: 0; border-radius: 7px; padding: 8px 10px; background: transparent; color: var(--fg); cursor: pointer; text-align: left; display: grid; gap: 1px; }
+    #x-formats button small { color: var(--muted); font-size: 11.5px; }
+    #x-formats button:hover { background: var(--hover); }
+    #x-formats button.on { background: var(--active); font-weight: 600; }
+    #x-formats button.on small { font-weight: 400; }
+    .xmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; }
+    /* The checks show the image's real edges and any transparent corners. */
+    #x-preview { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; border-radius: 8px; border: 1px solid var(--line);
+      background: conic-gradient(var(--hover) 25%, var(--bg) 0 50%, var(--hover) 0 75%, var(--bg) 0) 0 0 / 18px 18px; position: relative; }
+    #x-preview > img, #x-preview > video, #x-preview > .xvid > svg { max-width: calc(100% - 24px); max-height: calc(100% - 24px); box-shadow: 0 2px 14px rgba(0,0,0,.14); display: block; }
+    #x-preview > .xvid { display: contents; }
+    #x-preview > .xvid > svg { width: auto; height: auto; }
+    #x-preview > iframe { border: 0; background: #fff; box-shadow: 0 2px 14px rgba(0,0,0,.14); transform-origin: center; flex: none; }
+    #x-preview > textarea { align-self: stretch; flex: 1; margin: 0; border: 0; border-radius: 8px; padding: 10px; resize: none; background: var(--bg); color: var(--fg); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+    #x-preview .xwait { color: var(--muted); font-size: 13px; background: var(--panel); padding: 6px 10px; border-radius: 6px; }
+    #x-info { color: var(--muted); font-size: 12px; min-height: 16px; }
+    .xopts { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
+    .xopts label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+    .xopts select { height: 29px; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; background: var(--bg); color: var(--fg); font: inherit; }
+    .pick { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+    .pick button { border: 0; padding: 5px 11px; background: var(--bg); color: var(--fg); cursor: pointer; }
+    .pick button + button { border-left: 1px solid var(--line); }
+    .pick button.on { background: var(--active); font-weight: 600; }
+    .xrow { display: flex; align-items: center; gap: 8px; }
+    #x-status { flex: 1; color: var(--muted); font-size: 12px; }
     #json-dlg { width: min(720px, calc(100vw - 40px)); padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg); }
     #json-dlg::backdrop { background: rgba(0,0,0,.35); }
     #json-dlg form { display: grid; gap: 10px; }
@@ -102,17 +131,6 @@
     #say[hidden] { display: none; }
     #say.fresh { animation: say-in .35s ease-out; }
     @keyframes say-in { from { opacity: 0; transform: translate(-50%, 4px); } to { opacity: 1; transform: translate(-50%, 0); } }
-    #anim { position: absolute; right: 10px; top: 55px; z-index: 6; width: 300px; padding: 12px; display: grid; gap: 10px;
-      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
-    #anim[hidden] { display: none; }
-    #anim label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
-    #anim select { height: 29px; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; background: var(--bg); color: var(--fg); font: inherit; }
-    #anim .pick { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-    #anim .pick button { flex: 1; border: 0; padding: 5px 0; background: var(--bg); cursor: pointer; }
-    #anim .pick button + button { border-left: 1px solid var(--line); }
-    #anim .pick button.on { background: var(--active); font-weight: 600; }
-    #anim .row { display: flex; align-items: center; gap: 8px; }
-    #anim-status { flex: 1; color: var(--muted); font-size: 12px; }
     .panel { position: absolute; right: 10px; top: 55px; z-index: 6; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
     .panel[hidden] { display: none; }
     #history { width: 300px; max-height: calc(100% - 70px); overflow-y: auto; padding: 6px; }
@@ -167,13 +185,24 @@
         <input id="search" type="search" placeholder="Search  ⌘F" aria-label="Search this diagram" />
         <button id="history-btn" class="btn" title="Every change is a version; look back and restore">History</button>
         <button id="style-btn" class="btn" aria-haspopup="true"></button>
-        <button id="export-btn" class="btn" aria-haspopup="true">Export ▾</button>
+        <button id="export-btn" class="btn" aria-haspopup="dialog">Export</button>
       </header>
-      <div id="export-menu" class="menu" hidden>
-        <button data-export="svg">SVG</button><button data-export="html" hidden>HTML</button><button data-export="png">PNG</button>
-        <button data-export="json">JSON <small>copy, to import elsewhere</small></button>
-        <button id="anim-btn" hidden>Animation… <small>MP4 or animated SVG</small></button>
-      </div>
+      <dialog id="export-dlg"><form method="dialog">
+        <div class="xhead"><strong id="x-title">Export</strong><button aria-label="Close" title="Close (Esc)">✕</button></div>
+        <div class="xbody">
+          <nav id="x-formats" aria-label="Format"></nav>
+          <div class="xmain">
+            <div id="x-preview"></div>
+            <div id="x-info"></div>
+            <div class="xopts">
+              <label data-opt="theme">Look <span class="pick" data-key="theme"><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></span></label>
+              <label data-opt="scene">Scene <select id="x-scene"></select></label>
+              <label data-opt="speed">Speed <span class="pick" data-key="speed"><button type="button" data-v="0.5">0.5×</button><button type="button" data-v="1">1×</button><button type="button" data-v="1.5">1.5×</button><button type="button" data-v="2">2×</button></span></label>
+            </div>
+            <div class="xrow"><span id="x-status"></span><button type="button" id="x-copy" class="btn">Copy</button><button type="button" id="x-go" class="btn primary">Download</button></div>
+          </div>
+        </div>
+      </form></dialog>
       <dialog id="json-dlg"><form method="dialog">
         <strong id="json-title"></strong>
         <textarea id="json-text" spellcheck="false" aria-label="Diagram JSON"></textarea>
@@ -182,12 +211,6 @@
       <div id="scenes" hidden></div>
       <div id="gallery" hidden></div>
       <div id="history" class="panel" hidden></div>
-      <div id="anim" hidden>
-        <label>Format <span class="pick" data-key="format"><button data-v="mp4">MP4 video</button><button data-v="animated-svg">Animated SVG</button></span></label>
-        <label>Scene <select id="anim-scene"></select></label>
-        <label>Speed <span class="pick" data-key="speed"><button data-v="0.5">0.5×</button><button data-v="1">1×</button><button data-v="1.5">1.5×</button><button data-v="2">2×</button></span></label>
-        <div class="row"><span id="anim-status"></span><button id="anim-go" class="btn">Export</button></div>
-      </div>
       <div id="stage">
         <iframe id="page" sandbox="allow-same-origin" title="Page" hidden></iframe>
         <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -214,7 +237,7 @@
     import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE, cameraView, resolveFrame } from './lib/render.js';
     import { resolveStyle } from './lib/styles.js';
     import { diffDocs, slugify } from './lib/edit.js';
-    import { timeline, frameAt } from './lib/scenes.js';
+    import { timeline, frameAt, forExport, usesStage } from './lib/scenes.js';
     import { pageHtml, pageBox } from './lib/page.js';
 
     const $ = (id) => document.getElementById(id);
@@ -367,8 +390,6 @@
       runSearch();
       sceneBar();
       const isPage = doc.html !== undefined;
-      document.querySelector('[data-export="svg"]').hidden = isPage;
-      document.querySelector('[data-export="html"]').hidden = !isPage;
       $('hint').textContent = isPage ? HINT_PAGE : HINT;
       if (foreign) status(`updated ${new Date().toLocaleTimeString()}`);
       render();
@@ -909,11 +930,6 @@
       URL.revokeObjectURL(a.href);
     }
 
-    $('export-btn').onclick = () => ($('export-menu').hidden = !$('export-menu').hidden);
-    document.addEventListener('pointerdown', (ev) => {
-      if (!ev.target.closest('#export-menu, #export-btn')) $('export-menu').hidden = true;
-    });
-
     // JSON in a dialog: copy it out of one Giotto, paste it into another's Import (the + by the logo).
     function jsonDialog(text) {
       const importing = text === undefined;
@@ -943,27 +959,6 @@
       await open(out.id);
     };
 
-    document.querySelectorAll('[data-export]').forEach((btn) => btn.addEventListener('click', async () => {
-      $('export-menu').hidden = true;
-      if (!doc) return;
-      const f = btn.dataset.export;
-      if (f === 'json') return jsonDialog(base ?? JSON.stringify(doc));
-      if (doc.html !== undefined) {
-        // A page: PNG drawn by Chrome on the server, or the HTML as one file.
-        if (f === 'html') download(`${fileName()}.html`, pageHtml(doc, styles[styleId], { dark: isDark() }), 'text/html');
-        if (f !== 'png') return;
-        const res = await fetch(`/api/page.png?id=${current}&dark=${isDark() ? 1 : 0}`);
-        return res.ok ? download(`${fileName()}.png`, await res.blob()) : toast((await res.json()).error);
-      }
-      // A diagram with scenes exports as an animated SVG (all scenes, at the player's speed), like the docs figures.
-      if (f === 'svg' && doc.scenes?.length) {
-        const res = await fetch(`/api/animation?id=${current}`, { method: 'POST', body: JSON.stringify({ format: 'animated-svg', speed: player.speed, dark: isDark() }) });
-        return download(`${fileName()}.svg`, await res.blob());
-      }
-      if (f === 'svg') download(`${fileName()}.svg`, toSvg(doc, S), 'image/svg+xml');
-      if (f === 'png') download(`${fileName()}.png`, await toPng(toSvg(doc, S)));
-    }));
-
     // ---- scenes: play a diagram's stories (tabs, play/pause, 1x/2x) ----
 
     const player = { on: false, playing: false, scene: 0, t: 0, speed: 1, tl: null, last: 0 };
@@ -971,7 +966,6 @@
     function sceneBar() {
       const scenes = doc?.scenes || [];
       $('scenes').hidden = !scenes.length;
-      $('anim-btn').hidden = !scenes.length;
       if (!scenes.length) return stopPlayer();
       player.tl = timeline(doc);
       if (player.scene >= scenes.length) player.scene = 0;
@@ -1033,64 +1027,148 @@
       requestAnimationFrame(tick);
     }
 
-    // ---- animated export: MP4 or animated SVG, one scene or all, at a chosen speed ----
+    // ---- export: one dialog, a tab per format, each previewed as the file it will download ----
 
-    const anim = { format: 'mp4', speed: '1' };
-    function showAnimPanel() {
-      const scenes = doc?.scenes || [];
-      // Start from what the player shows: its scene and speed.
-      $('anim-scene').replaceChildren(new Option('All scenes, in order', 'all'), ...scenes.map((sc, i) => new Option(sc.label || `Scene ${i + 1}`, String(i + 1))));
-      $('anim-scene').value = player.on ? String(player.scene + 1) : 'all';
-      anim.speed = String(player.speed);
-      syncPicks();
-      $('anim-status').textContent = '';
-      $('gallery').hidden = true;
-      $('anim').hidden = false;
-    }
-    function syncPicks() {
-      document.querySelectorAll('#anim .pick').forEach((p) => p.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === anim[p.dataset.key])));
-    }
-    document.querySelectorAll('#anim .pick').forEach((p) => p.addEventListener('click', (ev) => {
-      const v = ev.target.closest('button')?.dataset.v;
-      if (v) (anim[p.dataset.key] = v), syncPicks();
-    }));
-    $('anim-btn').onclick = (ev) => {
-      ev.stopPropagation();
-      $('export-menu').hidden = true;
-      showAnimPanel();
+    const xp = { format: 'svg', theme: 'light', scene: 'all', speed: '1', token: 0, url: null, file: null };
+    const formatsOf = () => (doc.html !== undefined
+      ? [['png', 'PNG', 'The image, drawn by Chrome'], ['html', 'HTML', 'One file, opens in any browser'], ['json', 'JSON', 'Move it to another Giotto']]
+      : [['svg', 'SVG', doc.scenes?.length ? 'Animated, plays on GitHub' : 'Sharp at any size'], ['png', 'PNG', 'A picture for chats and slides'],
+        ...(doc.scenes?.length ? [['mp4', 'Video', 'MP4, for X, talks and posts']] : []), ['json', 'JSON', 'Move it to another Giotto']]);
+    const kb = (n) => (n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`);
+    const svgSize = (svg) => ['width', 'height'].map((k) => +new RegExp(`\\b${k}="([\\d.]+)"`).exec(svg.slice(0, svg.indexOf('>')))?.[1]);
+    const xOpts = () => ({ scene: xp.scene === 'all' ? undefined : +xp.scene, speed: +xp.speed, dark: xp.theme === 'dark' });
+    const xName = () => `${fileName()}${xp.scene === 'all' ? '' : `-scene${xp.scene}`}${xp.speed === '1' ? '' : `-${xp.speed}x`}`;
+    const failed = async (res) => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText); return res; };
+
+    // Starts from what you see: the canvas's light or dark, and the scene and speed the player is on.
+    $('export-btn').onclick = () => {
+      if (!doc) return;
+      const scenes = doc.scenes || [];
+      Object.assign(xp, { theme: isDark() ? 'dark' : 'light', scene: player.on && scenes.length ? String(player.scene + 1) : 'all', speed: String(player.speed) });
+      if (!formatsOf().some(([f]) => f === xp.format)) xp.format = formatsOf()[0][0];
+      $('x-scene').replaceChildren(new Option('All scenes, in order', 'all'), ...scenes.map((sc, i) => new Option(sc.label || `Scene ${i + 1}`, String(i + 1))));
+      $('x-scene').value = xp.scene;
+      $('x-title').textContent = `Export “${doc.title || current}”`;
+      $('export-dlg').showModal();
+      showFormat();
     };
-    document.addEventListener('pointerdown', (ev) => {
-      if (!ev.target.closest('#anim, #anim-btn')) $('anim').hidden = true;
-    });
+    $('export-dlg').addEventListener('close', () => (xp.token++, setPreview(null)));
+    document.querySelectorAll('#export-dlg .pick').forEach((p) => p.addEventListener('click', (ev) => {
+      const v = ev.target.closest('button')?.dataset.v;
+      if (v && xp[p.dataset.key] !== v) (xp[p.dataset.key] = v), showFormat();
+    }));
+    $('x-scene').onchange = () => ((xp.scene = $('x-scene').value), showFormat());
 
-    $('anim-go').onclick = async () => {
-      const scene = $('anim-scene').value, id = current;
-      const name = `${fileName()}${scene === 'all' ? '' : `-scene${scene}`}${anim.speed === '1' ? '' : `-${anim.speed}x`}`;
-      const body = JSON.stringify({ format: anim.format, scene: scene === 'all' ? undefined : +scene, speed: +anim.speed, dark: isDark() });
-      $('anim-go').disabled = true;
+    function setPreview(node, info = '', url = null) {
+      if (xp.url) URL.revokeObjectURL(xp.url);
+      xp.url = url;
+      $('x-preview').replaceChildren(...(node ? [node] : []));
+      $('x-info').textContent = info;
+    }
+
+    async function showFormat() {
+      const f = xp.format, token = ++xp.token, dark = xp.theme === 'dark', S2 = resolveStyle(styles[styleId], dark), scenes = !!doc.scenes?.length;
+      const live = () => token === xp.token && $('export-dlg').open;
+      $('x-formats').replaceChildren(...formatsOf().map(([id, name, about]) => {
+        const b = Object.assign(document.createElement('button'), { type: 'button', className: id === f ? 'on' : '', onclick: () => ((xp.format = id), showFormat()) });
+        b.append(Object.assign(document.createElement('span'), { textContent: name }), Object.assign(document.createElement('small'), { textContent: about }));
+        return b;
+      }));
+      document.querySelectorAll('#export-dlg .pick').forEach((p) => p.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === xp[p.dataset.key])));
+      document.querySelector('[data-opt="theme"]').hidden = f === 'json';
+      document.querySelector('[data-opt="scene"]').hidden = document.querySelector('[data-opt="speed"]').hidden = !(scenes && (f === 'svg' || f === 'mp4'));
+      $('x-copy').hidden = f !== 'json';
+      $('x-go').textContent = f === 'mp4' ? 'Render and download' : 'Download';
+      $('x-go').disabled = true;
+      $('x-status').textContent = '';
+      xp.file = null;
+      setPreview(Object.assign(document.createElement('div'), { className: 'xwait', textContent: 'Drawing the preview…' }));
       try {
-        const res = await fetch(`/api/animation?id=${id}`, { method: 'POST', body });
-        if (!res.ok) throw new Error((await res.json()).error);
-        if (anim.format === 'animated-svg') {
-          download(`${name}.svg`, await res.blob());
-          $('anim-status').textContent = 'Downloaded.';
-          return;
+        if (f === 'json') {
+          const text = JSON.stringify(JSON.parse(base ?? JSON.stringify(doc)), null, 2);
+          xp.file = { blob: new Blob([text], { type: 'application/json' }), name: `${fileName()}.json` };
+          setPreview(Object.assign(document.createElement('textarea'), { value: text, readOnly: true, spellcheck: false }), `${kb(xp.file.blob.size)} · paste it into another Giotto with the + next to the logo`);
+        } else if (f === 'html') {
+          // The page's own file in a sandbox, at its real size, scaled down to fit.
+          const html = pageHtml(doc, styles[styleId], { dark }), { w, total } = pageBox(doc, styles[styleId], dark);
+          const fr = Object.assign(document.createElement('iframe'), { srcdoc: html, title: 'Preview', width: w, height: total });
+          fr.setAttribute('sandbox', '');
+          xp.file = { blob: new Blob([html], { type: 'text/html' }), name: `${fileName()}.html` };
+          setPreview(fr, `${w}×${total} · ${kb(xp.file.blob.size)}`);
+          const box = $('x-preview'), k = Math.min(1, (box.clientWidth - 24) / w, (box.clientHeight - 24) / total);
+          Object.assign(fr.style, { transform: `scale(${k})`, margin: `${(total * (k - 1)) / 2}px ${(w * (k - 1)) / 2}px` });
+        } else if (f === 'mp4') {
+          // Every frame the video will have, drawn by the same code that renders it, at its 24 fps.
+          const played = forExport(doc, xOpts()), tl = timeline(played), view = usesStage(played) ? played.view || { width: 1280, height: 800 } : null;
+          const V = { ...S2, flatShadows: true }, frame = (si, t) => toSvg(played, V, { frame: frameAt(played, si, t, tl), sceneIndex: si, view, styles });
+          const [w, h] = svgSize(frame(0, 0)), even = (n) => Math.ceil((n * 1.5) / 2) * 2;
+          const box = Object.assign(document.createElement('div'), { className: 'xvid' });
+          setPreview(box, `${even(w)}×${even(h)} · ${(tl.total / 1000).toFixed(1)} s · 24 fps · rendered on this computer when you download (needs ffmpeg)`);
+          const start = performance.now(), step = 1000 / 24;
+          let shown = -1;
+          const tick = (now) => {
+            if (!live()) return;
+            const n = Math.floor(((now - start) % tl.total) / step);
+            if (n !== shown) {
+              let t = n * step, si = 0;
+              while (si < tl.scenes.length - 1 && t >= tl.scenes[si].duration) t -= tl.scenes[si++].duration;
+              box.innerHTML = frame(si, t);
+              shown = n;
+            }
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        } else {
+          // SVG and PNG: the file itself, shown as an image (the way a README or a chat shows it).
+          let blob, note = '';
+          if (f === 'png') blob = doc.html !== undefined ? await (await failed(await fetch(`/api/page.png?id=${current}&dark=${dark ? 1 : 0}`))).blob() : await toPng(toSvg(doc, S2));
+          else if (scenes) (blob = await (await failed(await fetch(`/api/animation?id=${current}`, { method: 'POST', body: JSON.stringify({ format: 'animated-svg', ...xOpts() }) }))).blob()), (note = ' · plays its scenes, on GitHub too');
+          else blob = new Blob([toSvg(doc, S2)], { type: 'image/svg+xml' });
+          if (!live()) return;
+          const url = URL.createObjectURL(blob), img = new Image();
+          img.src = url;
+          await img.decode().catch(() => {});
+          if (!live()) return URL.revokeObjectURL(url);
+          xp.file = { blob, name: `${f === 'svg' ? xName() : fileName()}.${f}` };
+          setPreview(img, `${img.naturalWidth}×${img.naturalHeight}${f === 'png' ? ' px' : ''} · ${kb(blob.size)}${note}`, url);
         }
+        if (live()) $('x-go').disabled = false;
+      } catch (e) {
+        if (live()) setPreview(Object.assign(document.createElement('div'), { className: 'xwait', textContent: `Couldn't draw it: ${e.message}` }));
+      }
+    }
+
+    $('x-copy').onclick = async () => {
+      const text = await xp.file?.blob.text();
+      await navigator.clipboard.writeText(text).then(() => ($('x-status').textContent = 'Copied.'), () => $('x-preview').querySelector('textarea')?.select());
+    };
+    $('x-go').onclick = async () => {
+      if (xp.format !== 'mp4') return xp.file && download(xp.file.name, xp.file.blob);
+      const name = xName(), body = JSON.stringify({ format: 'mp4', ...xOpts() }), info = $('x-info').textContent.split(' · ').slice(0, 3).join(' · ');
+      $('x-go').disabled = true;
+      try {
         // Video renders on the server; follow its progress, then download.
-        const { job } = await res.json();
+        const { job } = await (await failed(await fetch(`/api/animation?id=${current}`, { method: 'POST', body }))).json();
         for (;;) {
           await new Promise((r) => setTimeout(r, 700));
           const st = await (await fetch(`/api/animation?job=${job}`)).json();
           if (st.error) throw new Error(st.error);
-          $('anim-status').textContent = `Rendering video… ${Math.round(st.progress * 100)}%`;
+          $('x-status').textContent = `Rendering the video… ${Math.round(st.progress * 100)}%`;
           if (st.done) break;
         }
-        download(`${name}.mp4`, await (await fetch(`/api/animation/file?job=${job}`)).blob());
-        $('anim-status').textContent = 'Downloaded.';
+        const blob = await (await fetch(`/api/animation/file?job=${job}`)).blob();
+        download(`${name}.mp4`, blob);
+        $('x-status').textContent = 'Downloaded.';
+        // Still looking at it: the preview becomes the video file itself.
+        if ($('export-dlg').open && xp.format === 'mp4') {
+          xp.token++;
+          const url = URL.createObjectURL(blob);
+          setPreview(Object.assign(document.createElement('video'), { src: url, controls: true, autoplay: true, loop: true, muted: true, playsInline: true }), `${info} · ${kb(blob.size)} · the downloaded file`, url);
+        }
       } catch (e) {
-        $('anim-status').textContent = `Failed: ${e.message}`;
+        $('x-status').textContent = `Failed: ${e.message}`;
       } finally {
-        $('anim-go').disabled = false;
+        $('x-go').disabled = false;
       }
     };
 
