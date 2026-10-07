@@ -202,3 +202,16 @@ test('a "stretch" column gives its boxes the column width, keeps fixed widths, a
   assert.notEqual(row.a.width, row.b.width);
   assert.equal(row.a.y + row.a.height / 2, row.b.y + row.b.height / 2);
 });
+
+test('in a narrow card, row tags go on a line of their own so the text keeps the width', () => {
+  const rows = [{ tag: 'world', text: 'Alice joined Google', meta: 'Mar 2026', mark: 'new' }, { tag: 'experience', text: 'I suggested Alice for the ML project' }];
+  const card = (width) => {
+    const g = { elements: [{ id: 'f', type: 'rectangle', width, content: [{ type: 'title', text: 'Facts' }] }], scenes: [{ label: 's', beats: [{ show: { f: rows } }] }] };
+    const svg = toSvg(g, undefined, { frame: frameAt(g, 0, 800) });
+    const y = (text) => +new RegExp(`<text[^>]*y="([\\d.]+)"[^>]*>(?:<tspan[^>]*>)?${text}`).exec(svg)?.[1];
+    return { tag: y('world'), text: y('Alice joined Google'), lines: svg.match(/>Alice joined Google</g)?.length };
+  };
+  const narrow = card(200), wide = card(520);
+  assert.ok(narrow.text > narrow.tag, 'narrow: the text sits under its tag');
+  assert.equal(wide.text, wide.tag, 'wide: tag and text share a line');
+});
