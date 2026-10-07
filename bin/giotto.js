@@ -96,8 +96,9 @@ if (positionals[0] === 'export' || positionals[0] === 'spec') {
       const { toMp4 } = await import('../lib/video.js');
       await toMp4(doc, style, path.resolve(to), { dark: opts.theme === 'dark' });
     } else if (ext === '.png') {
-      const { Resvg } = await import('@resvg/resvg-js');
-      await writeOut(to, new Resvg(toSvg(doc, style, { dark: opts.theme === 'dark' }), { fitTo: { mode: 'zoom', value: 2 } }).render().asPng());
+      const [{ Resvg }, { emojify }] = await Promise.all([import('@resvg/resvg-js'), import('../lib/emoji.js')]);
+      const font = { loadSystemFonts: true };
+      await writeOut(to, new Resvg(emojify(toSvg(doc, style, { dark: opts.theme === 'dark' }), Resvg, font, 'Arial'), { fitTo: { mode: 'zoom', value: 2 }, font }).render().asPng());
     } else await writeOut(to, figureSvg(doc, style, { theme: opts.theme, animated: !opts.static }));
   } catch (e) {
     console.error(`giotto ${positionals[0]}: ${e.message}`);
@@ -510,7 +511,9 @@ async function toPng(svg) {
       return load();
     });
   }
-  return new Resvg(svg, { fitTo: { mode: 'zoom', value: 2 }, font: { loadSystemFonts: true } }).render().asPng();
+  const font = { loadSystemFonts: true };
+  const { emojify } = await import('../lib/emoji.js'); // resvg can't draw color emoji: they go in as pictures
+  return new Resvg(emojify(svg, Resvg, font, 'Arial'), { fitTo: { mode: 'zoom', value: 2 }, font }).render().asPng();
 }
 
 // Pages are HTML, so their PNG comes from a headless Chrome. First choice: chrome-headless-shell, if Playwright or

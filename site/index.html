@@ -221,7 +221,7 @@
         camAnim?.cancel();
         if (jumped) world.style.transform = key;
         else {
-          // From wherever it is now. A new focus flies (pulling back on the way); anything else glides.
+          // From wherever it is now. A new focus flies; anything else glides.
           const now = getComputedStyle(world).transform;
           const flying = pf?.camera && pf.camera.prev !== undefined && pf.camera.ms < CAMERA;
           const left = flying ? CAMERA - pf.camera.ms : 650;
