@@ -184,3 +184,21 @@ test('a two-node graph in a narrow card keeps its labels apart and inside the ca
   const e = resolve(g).find((x) => x.id === 'e');
   for (const l of labels) assert.ok(l.x > e.x && l.x < e.x + e.width, `label at ${l.x} outside ${e.x}..${e.x + e.width}`);
 });
+
+test('a "stretch" column gives its boxes the column width, keeps fixed widths, and centers in rows', () => {
+  const g = (direction) => ({ elements: [
+    { id: 'g', type: 'group', children: ['a', 'b', 'c'], layout: { direction, gap: 10, align: 'stretch' } },
+    { id: 'a', type: 'rectangle', label: { text: 'A' } },
+    { id: 'b', type: 'rectangle', label: { text: 'A much longer label than the first one' } },
+    { id: 'c', type: 'rectangle', label: { text: 'C' }, width: 150 },
+  ] });
+  const col = Object.fromEntries(resolve(g('column')).map((e) => [e.id, e]));
+  assert.ok(col.b.width > 150);
+  assert.equal(col.a.width, col.b.width);
+  assert.equal(col.a.x, col.b.x);
+  assert.equal(col.c.width, 150);
+  assert.equal(col.c.x + col.c.width / 2, col.b.x + col.b.width / 2); // fixed width: centered instead
+  const row = Object.fromEntries(resolve(g('row')).map((e) => [e.id, e]));
+  assert.notEqual(row.a.width, row.b.width);
+  assert.equal(row.a.y + row.a.height / 2, row.b.y + row.b.height / 2);
+});
