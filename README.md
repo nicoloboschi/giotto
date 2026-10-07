@@ -54,6 +54,28 @@ Diagrams are JSON files in `~/.giotto/`. Agents can edit them but never delete t
 | `list_styles`, `save_style`, `use_style` | Make, change and switch styles |
 | `diagram_history`, `restore_version` | Every change is a version; restore one as the newest |
 
+## Figures in your docs
+
+Giotto diagrams can be docs figures. Add it as a dependency (no build step: `"giotto": "github:nicoloboschi/giotto"`), then:
+
+```html
+<script type="module">import 'giotto/player';</script>
+<giotto-player src="/figures/retain.json"></giotto-player>
+```
+
+The player shows one tab per scene, play/pause, 1×/2×, full screen (⤢, Esc closes) and the narration under the figure. Scenes loop and start by themselves (`autoplay="false"` to start paused). Hovering a box lights it and its arrows. The figure fits the page width, down to half size, then scrolls. Readers who ask for less motion get no moving packets and no autoplay. In React, pass the diagram as a string: `<giotto-player doc={JSON.stringify(fig)} />`. Colors follow the page: set `--fig-bg`, `--fig-fg`, `--fig-muted`, `--fig-surface`, `--fig-border`, `--fig-accent` (per theme), and the player redraws when `[data-theme]` or the system theme changes. `examples/player.html` shows it working.
+
+For READMEs, PRs and CI, export without a canvas:
+
+```sh
+giotto export retain.json retain.svg        # plays the scenes; follows the reader's light/dark
+cat retain.json | giotto export - - > retain.svg
+giotto export retain.json retain.svg --theme dark --static
+giotto spec retain.svg                      # the diagram the SVG carries (narration included)
+```
+
+`out.png` and `out.mp4` work too, and `--style style.json` draws in a style of yours. From code, `giotto/figure` has `figureSvg` and `readFigure`; `giotto/render`, `giotto/scenes` and `giotto/styles` are the drawing code itself.
+
 ## Develop
 
 The [website](https://nicoloboschi.github.io/giotto/) is one Giotto diagram with one scene, `site/giotto-docs.json`, written by `node site/make-docs.mjs` (which also exports it to `docs/tour.svg` with Giotto's animated export). `site/index.html` is a small player: it draws each moment with Giotto's renderer and plays the scene up to the next `wait` beat as you scroll. `node site/build.mjs` builds the site into `_site/`; it deploys on every push to `main`.

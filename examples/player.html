@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Giotto player</title>
+  <!-- Serve the repo root (e.g. npx serve .) and open /examples/player.html. In a docs site: import 'giotto/player'. -->
+  <style>
+    :root { --fig-accent: #0074d9; --fig-fg: #1f2937; --fig-muted: #6b7280; --fig-bg: #ffffff; --fig-surface: #ffffff; --fig-border: #d8dee8; }
+    [data-theme='dark'] { --fig-accent: #4ea8ff; --fig-fg: #e5e7eb; --fig-muted: #9ca3af; --fig-bg: #1b1b1d; --fig-surface: #242526; --fig-border: #3a3d42; }
+    body { margin: 0; background: var(--fig-bg); color: var(--fig-fg); font: 16px/1.6 system-ui, sans-serif; }
+    main { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; }
+    button.theme { float: right; border: 1px solid var(--fig-border); background: none; color: inherit; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+    giotto-player { margin: 24px 0; }
+  </style>
+  <script type="module" src="../lib/player.js"></script>
+</head>
+<body>
+  <main>
+    <button class="theme" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Light / dark</button>
+    <h1>Giotto player</h1>
+    <p>A figure loaded from a file, playing its scenes. Hover a box to light it and its arrows.</p>
+    <giotto-player src="what-hindsight-does.json"></giotto-player>
+    <p>A figure written inline: a group with a logo, a box lit for the whole scene, a card with a minimum height.</p>
+    <giotto-player id="inline"></giotto-player>
+  </main>
+  <script type="module">
+    const logo = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="%230074d9" stroke-width="1.6"/></svg>'.replace('%23', '#'));
+    document.getElementById('inline').doc = {
+      elements: [
+        { id: 'app', type: 'rectangle', x: -260, y: 60, label: { text: 'Your app' } },
+        { id: 'api', type: 'rectangle', label: { text: 'Hindsight API' }, minCardHeight: 90 },
+        { id: 'bank', type: 'cylinder', label: { text: 'Memory bank' } },
+        { id: 'svc', type: 'group', children: ['api', 'bank'], label: { title: 'Hindsight', logo }, layout: { direction: 'row', gap: 60 } },
+        { id: 'a1', type: 'arrow', start: { id: 'app' }, end: { id: 'api' }, label: { text: 'retain' } },
+        { id: 'a2', type: 'arrow', start: { id: 'api' }, end: { id: 'bank' } },
+      ],
+      scenes: [
+        { label: 'retain()', light: ['bank'], beats: [
+          { edges: { edge: 'a1', data: 'Alice likes tea' }, say: 'Your app sends what happened.' },
+          { edges: 'a2', show: { api: [{ type: 'text', text: 'extracting facts' }] }, say: 'Hindsight keeps the facts that matter.' },
+        ] },
+        { label: 'recall()', beats: [
+          { edges: { edge: 'a1', data: 'what does Alice like?' }, say: 'Later, your app asks.' },
+          { edges: { edge: 'a1', back: true, data: 'tea' }, say: 'And gets the answer back.' },
+        ] },
+      ],
+    };
+  </script>
+</body>
+</html>

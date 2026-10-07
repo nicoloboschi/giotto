@@ -25,6 +25,9 @@ const { values: opts, positionals } = parseArgs({
     http: { type: 'string' },
     cloud: { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
+    theme: { type: 'string', default: 'auto' },
+    static: { type: 'boolean' },
+    style: { type: 'string' },
   },
 });
 
@@ -39,6 +42,13 @@ if (opts.help) {
                   hosted (npm start, e.g. on Manufact): MCP at /mcp on $PORT (3000), no local canvas.
                   Set GIOTTO_SECRET to serve at /mcp/<secret> instead, so only people with the URL get in.
   giotto update   pull the latest Giotto (the running canvas switches over by itself)
+  giotto export diagram.json out.svg
+                  draw a diagram file, no canvas needed. "-" reads it from stdin / writes to stdout.
+                  The SVG plays the scenes, follows the reader's light/dark (--theme auto|light|dark),
+                  and carries the diagram (read it back with giotto spec). --static: no animation.
+                  out.png and out.mp4 work too. --style style.json: draw in that style.
+  giotto spec figure.svg
+                  print the diagram a giotto SVG carries
 
 Options: --dir ~/.giotto (where diagrams live), --port 4321`);
   process.exit(0);
@@ -53,6 +63,38 @@ if (positionals[0] === 'update') {
     execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--silent'], { cwd: root, stdio: 'inherit' });
   } catch {
     process.exit(1); // git already said why
+  }
+  process.exit(0);
+}
+// Figures from the command line (docs builds, CI): nothing but the files, no canvas, no ~/.giotto.
+if (positionals[0] === 'export' || positionals[0] === 'spec') {
+  const readIn = (f) => (f === '-' || !f ? readFileSync(0, 'utf8') : readFileSync(f, 'utf8'));
+  const writeOut = (f, data) => (f === '-' || !f ? process.stdout.write(data) : fs.writeFile(f, data));
+  try {
+    const { figureSvg, readFigure } = await import('../lib/figure.js');
+    if (positionals[0] === 'spec') {
+      const doc = readFigure(readIn(positionals[1]));
+      if (!doc) throw new Error('no diagram in this SVG (only files from giotto export carry one)');
+      process.stdout.write(JSON.stringify(doc, null, 2) + '\n');
+      process.exit(0);
+    }
+    const [, from, to = '-'] = positionals;
+    const doc = JSON.parse(readIn(from));
+    const style = opts.style ? JSON.parse(readFileSync(opts.style, 'utf8')) : undefined;
+    if (!['auto', 'light', 'dark'].includes(opts.theme)) throw new Error('--theme is auto, light or dark');
+    const ext = path.extname(to).toLowerCase();
+    if (ext === '.mp4') {
+      const { toMp4 } = await import('../lib/video.js');
+      await toMp4(doc, style, path.resolve(to), { dark: opts.theme === 'dark' });
+    } else if (ext === '.png') {
+      const { Resvg } = await import('@resvg/resvg-js');
+      await writeOut(to, new Resvg(toSvg(doc, style, { dark: opts.theme === 'dark' }), { fitTo: { mode: 'zoom', value: 2 } }).render().asPng());
+    } else await writeOut(to, figureSvg(doc, style, { theme: opts.theme, animated: !opts.static }));
+    const warnings = [...layoutWarnings(doc, style), ...sceneWarnings(doc)];
+    for (const w of warnings) console.error(`warning: ${w}`);
+  } catch (e) {
+    console.error(`giotto ${positionals[0]}: ${e.message}`);
+    process.exit(1);
   }
   process.exit(0);
 }
