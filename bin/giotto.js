@@ -312,31 +312,42 @@ function serve() {
         return;
       }
       // Animated exports from the canvas. Animated SVG comes back right away; video renders in the
-      // background and the page polls for progress, then downloads it.
+      // background as a job in the export queue, which the page follows and can reopen any time.
       if (route === 'POST /api/animation') {
-        const { format, scene, speed, dark } = await body();
+        const { format, scene, speed, dark, size: asked, fps, name } = await body();
         const doc = forExport(await readDoc(id), { scene, speed });
         const style = await getStyle(await currentStyle());
         const styles = await listStyles(); // a scene can switch to any saved style
-        if (format === 'animated-svg') return send(200, toAnimatedSvg(doc, style, { dark: !!dark, styles }), 'image/svg+xml');
+        // A frame size the page picked (16:9, 1:1, 9:16…): whole, even pixels (video needs them), at most 4K.
+        const even = (n) => Math.max(16, Math.min(4096, Math.round(+n / 2) * 2));
+        const size = asked?.width && asked?.height ? { width: even(asked.width), height: even(asked.height) } : undefined;
+        if (format === 'animated-svg') return send(200, toAnimatedSvg(doc, style, { dark: !!dark, styles, size }), 'image/svg+xml');
         const job = String(nextJob++), file = path.join(os.tmpdir(), `giotto-${process.pid}-${job}.mp4`);
-        jobs.set(job, { progress: 0, done: false, error: null, file });
+        const rate = [24, 30, 60].includes(+fps) ? +fps : 24;
+        jobs.set(job, { job, id, name: String(name || id), size, fps: rate, seconds: timeline(doc).total / 1000, started: Date.now(), progress: 0, done: false, error: null, file });
         import('../lib/video.js')
-          .then(({ toMp4 }) => toMp4(doc, style, file, { dark: !!dark, styles, onProgress: (p) => (jobs.get(job).progress = p) }))
-          .then(() => (jobs.get(job).done = true), (e) => (jobs.get(job).error = e.message));
+          .then(({ toMp4 }) => toMp4(doc, style, file, { dark: !!dark, styles, size, fps: rate, onProgress: (p) => (jobs.get(job) && (jobs.get(job).progress = p)) }))
+          .then(async () => { const j = jobs.get(job); if (j) Object.assign(j, { done: true, progress: 1, bytes: (await fs.stat(file)).size, finished: Date.now() }); },
+            (e) => jobs.get(job) && (jobs.get(job).error = e.message));
         return send(200, { job });
       }
+      const jobView = ({ file, ...j }) => j;
+      if (route === 'GET /api/animation/jobs') return send(200, [...jobs.values()].map(jobView).reverse());
       if (route === 'GET /api/animation') {
         const j = jobs.get(searchParams.get('job'));
-        return j ? send(200, { progress: j.progress, done: j.done, error: j.error }) : send(404, { error: 'no such export' });
+        return j ? send(200, jobView(j)) : send(404, { error: 'no such export' });
+      }
+      // Finished videos stay in the queue (download them again) until removed.
+      if (route === 'DELETE /api/animation') {
+        const j = jobs.get(searchParams.get('job'));
+        if (j) jobs.delete(j.job), await fs.rm(j.file, { force: true });
+        return send(200, { ok: true });
       }
       if (route === 'GET /api/animation/file') {
         const j = jobs.get(searchParams.get('job'));
         if (!j?.done) return send(404, { error: 'not ready' });
         res.writeHead(200, { 'content-type': 'video/mp4', 'cache-control': 'no-store' });
-        res.end(await fs.readFile(j.file));
-        jobs.delete(searchParams.get('job'));
-        return fs.rm(j.file, { force: true });
+        return res.end(await fs.readFile(j.file));
       }
       if (route === 'GET /api/page.png') {
         const png = await pagePng(await readDoc(id), await getStyle(await currentStyle()), searchParams.get('dark') === '1');

@@ -78,3 +78,12 @@ test('giotto export fails, writing nothing, when something points at an element 
     assert.throws(run, (e) => e.status === 1 && e.stdout.length === 0 && /doesn't exist/.test(e.stderr));
   }
 });
+
+test('fitTo puts a drawing in a frame of another shape, centered', async () => {
+  const { fitTo } = await import('../lib/render.js');
+  const svg = fitTo('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="200" height="100"><rect/></svg>', { width: 1080, height: 1920 }, '#fff');
+  assert.match(svg, /^<svg[^>]*width="1080" height="1920"/);
+  const [, , w, h] = /viewBox="([^"]+)"/.exec(svg)[1].split(' ').map(Number);
+  assert.ok(Math.abs(w / h - 1080 / 1920) < 1e-9);
+  assert.match(svg, /<svg x="0" y="0" width="200" height="100" viewBox="0 0 200 100"><rect\/><\/svg>/);
+});

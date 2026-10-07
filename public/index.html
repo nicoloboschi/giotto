@@ -61,7 +61,8 @@
     #x-formats button.on small { font-weight: 400; }
     .xmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; }
     /* The checks show the image's real edges and any transparent corners. */
-    #x-preview { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; border-radius: 8px; border: 1px solid var(--line);
+    .xstage { flex: 1; min-height: 0; display: flex; position: relative; }
+    #x-preview { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: auto; border-radius: 8px; border: 1px solid var(--line);
       background: conic-gradient(var(--hover) 25%, var(--bg) 0 50%, var(--hover) 0 75%, var(--bg) 0) 0 0 / 18px 18px; position: relative; }
     #x-preview > img, #x-preview > video, #x-preview > .xvid > svg { max-width: calc(100% - 24px); max-height: calc(100% - 24px); box-shadow: 0 2px 14px rgba(0,0,0,.14); display: block; }
     #x-preview > .xvid { display: contents; }
@@ -69,6 +70,27 @@
     #x-preview > iframe { border: 0; background: #fff; box-shadow: 0 2px 14px rgba(0,0,0,.14); transform-origin: center; flex: none; }
     #x-preview > textarea { align-self: stretch; flex: 1; margin: 0; border: 0; border-radius: 8px; padding: 10px; resize: none; background: var(--bg); color: var(--fg); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
     #x-preview .xwait { color: var(--muted); font-size: 13px; background: var(--panel); padding: 6px 10px; border-radius: 6px; }
+    /* While a video renders: a pill with the progress over the preview, and a bar along its bottom edge. */
+    #x-render { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 13px; border-radius: 999px;
+      background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.14); font-size: 12.5px; white-space: nowrap; }
+    .spin { width: 12px; height: 12px; flex: none; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: xspin .8s linear infinite; }
+    @keyframes xspin { to { transform: rotate(360deg); } }
+    #x-progress { position: absolute; left: 1px; right: 1px; bottom: 1px; height: 4px; overflow: hidden; border-radius: 0 0 7px 7px; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+    #x-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .6s ease; }
+    #x-progress.busy i { width: 30%; transition: none; animation: xslide 1.2s ease-in-out infinite; }
+    @keyframes xslide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+    #x-go .spin { border-color: rgba(255,255,255,.35); border-top-color: #fff; }
+    #x-formats hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+    #queue-btn .spin { width: 11px; height: 11px; }
+    .xqueue { align-self: stretch; flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--panel); border-radius: 8px; }
+    .xqueue p { color: var(--muted); text-align: center; margin: 40px 0; }
+    .xjob { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+    .xjob b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xjob small { color: var(--muted); grid-column: 1; }
+    .xjob .acts { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 6px; }
+    .xjob .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+    .xjob .bar i { display: block; height: 100%; background: var(--accent); transition: width .6s ease; }
+    .xjob.err small { color: #dc2626; }
     #x-info { color: var(--muted); font-size: 12px; min-height: 16px; }
     .xopts { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
     .xopts label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
@@ -162,6 +184,8 @@
     #toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 4; padding: 7px 12px; border-radius: 6px;
       background: var(--fg); color: var(--bg); font-size: 12.5px; pointer-events: none; transition: opacity .15s; }
     #toast[hidden] { display: block; opacity: 0; }
+    #queue-btn[hidden], #fit-btn[hidden] { display: none; }
+    #fit-btn { position: absolute; right: 12px; bottom: 10px; z-index: 2; height: 30px; box-shadow: 0 2px 8px rgba(0,0,0,.08); color: var(--fg); }
     #hint { position: absolute; left: 12px; bottom: 8px; color: var(--muted); font-size: 11.5px; pointer-events: none; }
     @media (max-width: 900px) { aside { width: 190px; } #search { width: 110px; } #hint, #status { display: none; } }
   </style>
@@ -185,6 +209,7 @@
         <input id="search" type="search" placeholder="Search  ⌘F" aria-label="Search this diagram" />
         <button id="history-btn" class="btn" title="Every change is a version; look back and restore">History</button>
         <button id="style-btn" class="btn" aria-haspopup="true"></button>
+        <button id="queue-btn" class="btn" title="Exports in progress and ready to download" hidden><span class="spin"></span><span></span></button>
         <button id="export-btn" class="btn" aria-haspopup="dialog">Export</button>
       </header>
       <dialog id="export-dlg"><form method="dialog">
@@ -192,11 +217,18 @@
         <div class="xbody">
           <nav id="x-formats" aria-label="Format"></nav>
           <div class="xmain">
-            <div id="x-preview"></div>
+            <div class="xstage">
+              <div id="x-preview"></div>
+              <div id="x-render" role="status" hidden><span class="spin"></span><span></span></div>
+              <div id="x-progress" hidden><i></i></div>
+            </div>
             <div id="x-info"></div>
             <div class="xopts">
               <label data-opt="theme">Look <span class="pick" data-key="theme"><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></span></label>
               <label data-opt="scene">Scene <select id="x-scene"></select></label>
+              <label data-opt="aspect">Shape <span class="pick" data-key="aspect"><button type="button" data-v="original">Diagram</button><button type="button" data-v="16:9">16:9</button><button type="button" data-v="1:1">1:1</button><button type="button" data-v="9:16">9:16</button></span></label>
+              <label data-opt="res">Size <span class="pick" data-key="res"><button type="button" data-v="720">720p</button><button type="button" data-v="1080">1080p</button><button type="button" data-v="1440">1440p</button><button type="button" data-v="2160">4K</button></span></label>
+              <label data-opt="fps">Frame rate <span class="pick" data-key="fps"><button type="button" data-v="24">24</button><button type="button" data-v="30">30</button><button type="button" data-v="60">60</button></span></label>
               <label data-opt="speed">Speed <span class="pick" data-key="speed"><button type="button" data-v="0.5">0.5×</button><button type="button" data-v="1">1×</button><button type="button" data-v="1.5">1.5×</button><button type="button" data-v="2">2×</button></span></label>
             </div>
             <div class="xrow"><span id="x-status"></span><button type="button" id="x-copy" class="btn">Copy</button><button type="button" id="x-go" class="btn primary">Download</button></div>
@@ -229,12 +261,13 @@
           <ol id="tray-list"></ol>
           <div class="row"><button id="tray-clear" class="btn">Clear</button><button id="tray-copy" class="btn primary">Copy requested changes</button></div>
         </div>
+        <button id="fit-btn" class="btn" title="Fit everything in view (Shift+1)" aria-label="Fit everything in view"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>Fit</button>
         <div id="hint">Drag a box to move it · drag over an area to request a change · double-click to rename · [ ] send back / bring front · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
       </div>
     </main>
   </div>
   <script type="module">
-    import { drawContent, toSvg, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE, cameraView, resolveFrame } from './lib/render.js';
+    import { drawContent, toSvg, fitTo, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE, cameraView, resolveFrame } from './lib/render.js';
     import { resolveStyle } from './lib/styles.js';
     import { diffDocs, slugify } from './lib/edit.js';
     import { timeline, frameAt, forExport, usesStage } from './lib/scenes.js';
@@ -605,6 +638,12 @@
     }, { passive: false });
 
     new ResizeObserver(render).observe(svg);
+    // Everything in view: the button, or Shift+1 (as in design tools).
+    const fitAll = () => (fit(), render());
+    $('fit-btn').onclick = fitAll;
+    document.addEventListener('keydown', (ev) => {
+      if (ev.shiftKey && ev.code === 'Digit1' && !ev.metaKey && !ev.ctrlKey && !ev.target.closest('input, textarea, [contenteditable]')) ev.preventDefault(), fitAll();
+    });
     for (const ev of ['pointerdown', 'keydown', 'wheel']) document.addEventListener(ev, () => (lastInput = Date.now()), true);
 
     // ---- change requests: draw an area, say what should change, stage several, copy them all at once ----
@@ -1029,7 +1068,7 @@
 
     // ---- export: one dialog, a tab per format, each previewed as the file it will download ----
 
-    const xp = { format: 'svg', theme: 'light', scene: 'all', speed: '1', token: 0, url: null, file: null };
+    const xp = { format: 'svg', theme: 'light', scene: 'all', speed: '1', aspect: 'original', res: '1080', fps: '24', token: 0, url: null, file: null, lastJob: null };
     const formatsOf = () => (doc.html !== undefined
       ? [['png', 'PNG', 'The image, drawn by Chrome'], ['html', 'HTML', 'One file, opens in any browser'], ['json', 'JSON', 'Move it to another Giotto']]
       : [['svg', 'SVG', doc.scenes?.length ? 'Animated, plays on GitHub' : 'Sharp at any size'], ['png', 'PNG', 'A picture for chats and slides'],
@@ -1037,21 +1076,38 @@
     const kb = (n) => (n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`);
     const svgSize = (svg) => ['width', 'height'].map((k) => +new RegExp(`\\b${k}="([\\d.]+)"`).exec(svg.slice(0, svg.indexOf('>')))?.[1]);
     const xOpts = () => ({ scene: xp.scene === 'all' ? undefined : +xp.scene, speed: +xp.speed, dark: xp.theme === 'dark' });
-    const xName = () => `${fileName()}${xp.scene === 'all' ? '' : `-scene${xp.scene}`}${xp.speed === '1' ? '' : `-${xp.speed}x`}`;
+    const xName = () => `${fileName()}${xp.scene === 'all' ? '' : `-scene${xp.scene}`}${xp.speed === '1' ? '' : `-${xp.speed}x`}${xp.aspect === 'original' ? '' : `-${xp.aspect.replace(':', 'x')}`}`;
     const failed = async (res) => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText); return res; };
+    const ASPECT = { '16:9': 16 / 9, '1:1': 1, '9:16': 9 / 16 };
+    // The frame of an animated export: the chosen shape (or the diagram's own), its short side at the chosen size, in even pixels.
+    const frameSize = (w, h) => {
+      const a = ASPECT[xp.aspect] || w / h, short = +xp.res, even = (n) => Math.round(n / 2) * 2;
+      return a >= 1 ? { width: even(short * a), height: short } : { width: short, height: even(short / a) };
+    };
+    // A guess at the video's file size, from earlier renders (diagrams are mostly still, so they compress well).
+    const videoGuess = ({ width, height }, fps, secs) => 45 * 1024 * Math.sqrt((width * height) / 2.3e6) * Math.sqrt(fps / 24) * secs;
+    // The played diagram (scene, speed) and its natural size, before any frame shape.
+    function played(S2) {
+      const d = forExport(doc, xOpts()), tl = timeline(d), stage = usesStage(d);
+      const [w, h] = stage ? [d.view?.width || 1280, d.view?.height || 800] : svgSize(toSvg(d, S2, { frame: frameAt(d, 0, 0, tl), sceneIndex: 0 }));
+      return { d, tl, stage, size: frameSize(w, h) };
+    }
 
     // Starts from what you see: the canvas's light or dark, and the scene and speed the player is on.
-    $('export-btn').onclick = () => {
+    function openExport(format) {
       if (!doc) return;
       const scenes = doc.scenes || [];
       Object.assign(xp, { theme: isDark() ? 'dark' : 'light', scene: player.on && scenes.length ? String(player.scene + 1) : 'all', speed: String(player.speed) });
-      if (!formatsOf().some(([f]) => f === xp.format)) xp.format = formatsOf()[0][0];
+      if (format) xp.format = format;
+      if (xp.format !== 'queue' && !formatsOf().some(([f]) => f === xp.format)) xp.format = formatsOf()[0][0];
       $('x-scene').replaceChildren(new Option('All scenes, in order', 'all'), ...scenes.map((sc, i) => new Option(sc.label || `Scene ${i + 1}`, String(i + 1))));
       $('x-scene').value = xp.scene;
       $('x-title').textContent = `Export “${doc.title || current}”`;
       $('export-dlg').showModal();
       showFormat();
-    };
+    }
+    $('export-btn').onclick = () => openExport();
+    $('queue-btn').onclick = () => openExport('queue');
     $('export-dlg').addEventListener('close', () => (xp.token++, setPreview(null)));
     document.querySelectorAll('#export-dlg .pick').forEach((p) => p.addEventListener('click', (ev) => {
       const v = ev.target.closest('button')?.dataset.v;
@@ -1065,23 +1121,33 @@
       $('x-preview').replaceChildren(...(node ? [node] : []));
       $('x-info').textContent = info;
     }
+    const navButton = (id, name, about) => {
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: id === xp.format ? 'on' : '', onclick: () => ((xp.format = id), showFormat()) });
+      b.append(Object.assign(document.createElement('span'), { textContent: name }), Object.assign(document.createElement('small'), { textContent: about }));
+      return b;
+    };
+    function formatNav() {
+      const running = queue.filter((j) => !j.done && !j.error).length, ready = queue.filter((j) => j.done).length;
+      const about = [running && `${running} rendering`, ready && `${ready} ready`].filter(Boolean).join(' · ') || 'Nothing yet';
+      $('x-formats').replaceChildren(...formatsOf().map(([id, name, a]) => navButton(id, name, a)), document.createElement('hr'), navButton('queue', 'Queue', about));
+    }
 
     async function showFormat() {
       const f = xp.format, token = ++xp.token, dark = xp.theme === 'dark', S2 = resolveStyle(styles[styleId], dark), scenes = !!doc.scenes?.length;
       const live = () => token === xp.token && $('export-dlg').open;
-      $('x-formats').replaceChildren(...formatsOf().map(([id, name, about]) => {
-        const b = Object.assign(document.createElement('button'), { type: 'button', className: id === f ? 'on' : '', onclick: () => ((xp.format = id), showFormat()) });
-        b.append(Object.assign(document.createElement('span'), { textContent: name }), Object.assign(document.createElement('small'), { textContent: about }));
-        return b;
-      }));
+      const animated = scenes && (f === 'svg' || f === 'mp4');
+      formatNav();
       document.querySelectorAll('#export-dlg .pick').forEach((p) => p.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === xp[p.dataset.key])));
-      document.querySelector('[data-opt="theme"]').hidden = f === 'json';
-      document.querySelector('[data-opt="scene"]').hidden = document.querySelector('[data-opt="speed"]').hidden = !(scenes && (f === 'svg' || f === 'mp4'));
+      const show = { theme: f !== 'json' && f !== 'queue', scene: animated, speed: animated, aspect: animated, res: animated, fps: scenes && f === 'mp4' };
+      for (const [k, on] of Object.entries(show)) document.querySelector(`[data-opt="${k}"]`).hidden = !on;
       $('x-copy').hidden = f !== 'json';
+      $('x-go').hidden = f === 'queue';
       $('x-go').textContent = f === 'mp4' ? 'Render and download' : 'Download';
       $('x-go').disabled = true;
       $('x-status').textContent = '';
       xp.file = null;
+      renderProgress();
+      if (f === 'queue') return showQueue();
       setPreview(Object.assign(document.createElement('div'), { className: 'xwait', textContent: 'Drawing the preview…' }));
       try {
         if (f === 'json') {
@@ -1098,13 +1164,15 @@
           const box = $('x-preview'), k = Math.min(1, (box.clientWidth - 24) / w, (box.clientHeight - 24) / total);
           Object.assign(fr.style, { transform: `scale(${k})`, margin: `${(total * (k - 1)) / 2}px ${(w * (k - 1)) / 2}px` });
         } else if (f === 'mp4') {
-          // Every frame the video will have, drawn by the same code that renders it, at its 24 fps.
-          const played = forExport(doc, xOpts()), tl = timeline(played), view = usesStage(played) ? played.view || { width: 1280, height: 800 } : null;
-          const V = { ...S2, flatShadows: true }, frame = (si, t) => toSvg(played, V, { frame: frameAt(played, si, t, tl), sceneIndex: si, view, styles });
-          const [w, h] = svgSize(frame(0, 0)), even = (n) => Math.ceil((n * 1.5) / 2) * 2;
+          // Every frame the video will have, drawn by the same code that renders it, at its frame rate and shape.
+          const { d, tl, stage, size } = played(S2), fps = +xp.fps, V = { ...S2, flatShadows: true };
+          const frame = (si, t) => {
+            const svg = toSvg(d, V, { frame: frameAt(d, si, t, tl), sceneIndex: si, view: stage ? size : null, styles });
+            return stage ? svg : fitTo(svg, size, V.background);
+          };
           const box = Object.assign(document.createElement('div'), { className: 'xvid' });
-          setPreview(box, `${even(w)}×${even(h)} · ${(tl.total / 1000).toFixed(1)} s · 24 fps · rendered on this computer when you download (needs ffmpeg)`);
-          const start = performance.now(), step = 1000 / 24;
+          setPreview(box, `${size.width}×${size.height} · ${(tl.total / 1000).toFixed(1)} s · ${fps} fps · about ${kb(videoGuess(size, fps, tl.total / 1000))} · rendered on this computer (needs ffmpeg)`);
+          const start = performance.now(), step = 1000 / fps;
           let shown = -1;
           const tick = (now) => {
             if (!live()) return;
@@ -1122,8 +1190,10 @@
           // SVG and PNG: the file itself, shown as an image (the way a README or a chat shows it).
           let blob, note = '';
           if (f === 'png') blob = doc.html !== undefined ? await (await failed(await fetch(`/api/page.png?id=${current}&dark=${dark ? 1 : 0}`))).blob() : await toPng(toSvg(doc, S2));
-          else if (scenes) (blob = await (await failed(await fetch(`/api/animation?id=${current}`, { method: 'POST', body: JSON.stringify({ format: 'animated-svg', ...xOpts() }) }))).blob()), (note = ' · plays its scenes, on GitHub too');
-          else blob = new Blob([toSvg(doc, S2)], { type: 'image/svg+xml' });
+          else if (scenes) {
+            blob = await (await failed(await fetch(`/api/animation?id=${current}`, { method: 'POST', body: JSON.stringify({ format: 'animated-svg', ...xOpts(), size: played(S2).size }) }))).blob();
+            note = ' · plays its scenes, on GitHub too';
+          } else blob = new Blob([toSvg(doc, S2)], { type: 'image/svg+xml' });
           if (!live()) return;
           const url = URL.createObjectURL(blob), img = new Image();
           img.src = url;
@@ -1142,35 +1212,105 @@
       const text = await xp.file?.blob.text();
       await navigator.clipboard.writeText(text).then(() => ($('x-status').textContent = 'Copied.'), () => $('x-preview').querySelector('textarea')?.select());
     };
+    // Video goes to the export queue: it keeps rendering if the dialog closes (or the page reloads), and downloads when done.
     $('x-go').onclick = async () => {
       if (xp.format !== 'mp4') return xp.file && download(xp.file.name, xp.file.blob);
-      const name = xName(), body = JSON.stringify({ format: 'mp4', ...xOpts() }), info = $('x-info').textContent.split(' · ').slice(0, 3).join(' · ');
+      const S2 = resolveStyle(styles[styleId], xp.theme === 'dark');
+      const body = JSON.stringify({ format: 'mp4', ...xOpts(), size: played(S2).size, fps: +xp.fps, name: xName() });
       $('x-go').disabled = true;
       try {
-        // Video renders on the server; follow its progress, then download.
         const { job } = await (await failed(await fetch(`/api/animation?id=${current}`, { method: 'POST', body }))).json();
-        for (;;) {
-          await new Promise((r) => setTimeout(r, 700));
-          const st = await (await fetch(`/api/animation?job=${job}`)).json();
-          if (st.error) throw new Error(st.error);
-          $('x-status').textContent = `Rendering the video… ${Math.round(st.progress * 100)}%`;
-          if (st.done) break;
-        }
-        const blob = await (await fetch(`/api/animation/file?job=${job}`)).blob();
-        download(`${name}.mp4`, blob);
-        $('x-status').textContent = 'Downloaded.';
-        // Still looking at it: the preview becomes the video file itself.
-        if ($('export-dlg').open && xp.format === 'mp4') {
-          xp.token++;
-          const url = URL.createObjectURL(blob);
-          setPreview(Object.assign(document.createElement('video'), { src: url, controls: true, autoplay: true, loop: true, muted: true, playsInline: true }), `${info} · ${kb(blob.size)} · the downloaded file`, url);
-        }
+        mine.add(job);
+        xp.lastJob = job;
+        $('x-status').textContent = 'Added to the queue. It keeps going if you close this.';
+        await pollQueue();
       } catch (e) {
         $('x-status').textContent = `Failed: ${e.message}`;
       } finally {
         $('x-go').disabled = false;
       }
     };
+
+    // ---- the export queue: videos rendering on the server, shown in the header and in the dialog ----
+
+    let queue = [], polling = false;
+    const mine = new Set(), fetched = new Map(); // jobs started in this tab download by themselves when done
+    const jobPct = (j) => Math.round((j.progress || 0) * 100);
+    const jobState = (j) => (j.error ? `Failed: ${j.error}` : j.done ? `Ready · ${kb(j.bytes || 0)}` : j.progress > 0 && j.progress < 1 ? `Rendering · ${jobPct(j)}%` : j.progress >= 1 ? 'Finishing the file…' : 'Getting the frames ready…');
+    const jobAbout = (j) => [j.size && `${j.size.width}×${j.size.height}`, `${j.fps} fps`, `${(j.seconds || 0).toFixed(1)} s`].filter(Boolean).join(' · ');
+    async function jobBlob(j) {
+      if (!fetched.has(j.job)) fetched.set(j.job, (await fetch(`/api/animation/file?job=${j.job}`)).blob());
+      return fetched.get(j.job);
+    }
+    async function pollQueue() {
+      if (polling) return;
+      polling = true;
+      try {
+        for (;;) {
+          queue = await (await fetch('/api/animation/jobs')).json();
+          for (const j of queue) {
+            if (!mine.has(j.job) || !(j.done || j.error)) continue;
+            mine.delete(j.job);
+            if (j.done) {
+              const blob = await jobBlob(j);
+              download(`${j.name}.mp4`, blob);
+              toast(`Video ready: ${j.name}.mp4`);
+              // Still looking at it: the preview becomes the video file itself.
+              if ($('export-dlg').open && xp.format === 'mp4' && xp.lastJob === j.job) {
+                xp.token++;
+                const url = URL.createObjectURL(blob);
+                setPreview(Object.assign(document.createElement('video'), { src: url, controls: true, autoplay: true, loop: true, muted: true, playsInline: true }), `${jobAbout(j)} · ${kb(j.bytes || blob.size)} · the downloaded file`, url);
+              }
+            } else toast(`Video failed: ${j.error}`);
+          }
+          queueUi();
+          if (!queue.some((j) => !j.done && !j.error)) break;
+          await new Promise((r) => setTimeout(r, 600));
+        }
+      } catch {} finally {
+        polling = false;
+      }
+    }
+    function queueUi() {
+      const running = queue.filter((j) => !j.done && !j.error), ready = queue.filter((j) => j.done);
+      $('queue-btn').hidden = !queue.length;
+      $('queue-btn').firstChild.hidden = !running.length;
+      $('queue-btn').lastChild.textContent = running.length ? `Rendering ${jobPct(running[0])}%${running.length > 1 ? ` (+${running.length - 1})` : ''}` : `${ready.length} video${ready.length === 1 ? '' : 's'} ready`;
+      if ($('export-dlg').open) {
+        formatNav();
+        renderProgress();
+        if (xp.format === 'queue') showQueue();
+      }
+    }
+    // While this diagram's latest video renders, its progress shows over the video preview.
+    function renderProgress() {
+      const j = xp.format === 'mp4' && queue.find((x) => x.job === xp.lastJob && !x.done && !x.error);
+      $('x-render').hidden = $('x-progress').hidden = !j;
+      if (!j) return;
+      const p = j.progress || 0, secs = (Date.now() - j.started) / 1000, left = p > 0.05 && p < 1 ? Math.round((secs * (1 - p)) / p) : null;
+      $('x-render').lastChild.textContent = jobState(j) + (left != null ? ` · about ${left < 60 ? `${Math.max(1, left)} s` : `${Math.round(left / 60)} min`} left` : '');
+      $('x-progress').classList.toggle('busy', !(p > 0 && p < 1));
+      $('x-progress').firstChild.style.width = p > 0 && p < 1 ? `${jobPct(j)}%` : '';
+    }
+    function showQueue() {
+      const list = Object.assign(document.createElement('div'), { className: 'xqueue' });
+      if (!queue.length) list.append(Object.assign(document.createElement('p'), { textContent: 'No videos yet. Render one from the Video tab; it keeps going here even if you close this.' }));
+      for (const j of queue) {
+        const row = Object.assign(document.createElement('div'), { className: `xjob${j.error ? ' err' : ''}` });
+        const acts = Object.assign(document.createElement('div'), { className: 'acts' });
+        if (j.done) acts.append(Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Download', onclick: async () => download(`${j.name}.mp4`, await jobBlob(j)) }));
+        if (j.done || j.error) acts.append(Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Remove', onclick: async () => { await fetch(`/api/animation?job=${j.job}`, { method: 'DELETE' }); fetched.delete(j.job); queue = queue.filter((x) => x !== j); queueUi(); } }));
+        row.append(Object.assign(document.createElement('b'), { textContent: `${j.name}.mp4` }), acts, Object.assign(document.createElement('small'), { textContent: `${jobAbout(j)} · ${jobState(j)}` }));
+        if (!j.done && !j.error) {
+          const bar = Object.assign(document.createElement('div'), { className: 'bar' });
+          bar.append(Object.assign(document.createElement('i'), { style: `width:${Math.max(3, jobPct(j))}%` }));
+          row.append(bar);
+        }
+        list.append(row);
+      }
+      setPreview(list, queue.length ? 'Videos render on this computer; finished ones stay here until you remove them.' : '');
+    }
+    pollQueue(); // videos still rendering (or ready) from before a reload
 
     // ---- light / dark ----
 
