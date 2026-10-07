@@ -63,7 +63,7 @@ Giotto diagrams can be docs figures. Add it as a dependency (no build step: `"gi
 <giotto-player src="/figures/retain.json"></giotto-player>
 ```
 
-The player shows one tab per scene, play/pause, 1×/2×, full screen (⤢, Esc closes) and the narration under the figure. Scenes loop and start by themselves (`autoplay="false"` to start paused). Hovering a box lights it and its arrows. The figure fits the page width, down to half size, then scrolls. Readers who ask for less motion get no moving packets and no autoplay. In React, pass the diagram as a string: `<giotto-player doc={JSON.stringify(fig)} />`. Colors follow the page: set `--fig-bg`, `--fig-fg`, `--fig-muted`, `--fig-surface`, `--fig-border`, `--fig-accent` (per theme), and the player redraws when `[data-theme]` or the system theme changes. `examples/player.html` shows it working.
+The player shows one tab per scene, play/pause, 1×/2×, full screen (⤢, Esc closes) and the narration under the figure. Scenes loop and start by themselves (`autoplay="false"` to start paused). Hovering a box lights it and its arrows. The figure fits the page width, down to half size, then scrolls. Readers who ask for less motion get no moving packets and no autoplay. In React, pass the diagram as a string: `<giotto-player doc={JSON.stringify(fig)} />`. Colors follow the page: set `--fig-bg`, `--fig-fg`, `--fig-muted`, `--fig-surface`, `--fig-border`, `--fig-group` (group frames, default `--fig-bg`), `--fig-accent` (per theme), and the player redraws when `[data-theme]` or the system theme changes. `examples/player.html` shows it working.
 
 For READMEs, PRs and CI, export without a canvas:
 

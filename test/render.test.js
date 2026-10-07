@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve, toSvg, bounds, layoutWarnings } from '../lib/render.js';
+import { frameAt } from '../lib/scenes.js';
 
 const doc = {
   elements: [
@@ -171,4 +172,15 @@ test('export header, footer and backgrounds come from the style', async () => {
   assert.match(toSvg({ ...doc, footer: 'Draft' }, style), />Draft</); // the diagram's own footer wins
   assert.doesNotMatch(toSvg(doc), /g-header|g-footer/); // the default style shows neither
   new Resvg(svg).render();
+});
+
+test('a two-node graph in a narrow card keeps its labels apart and inside the card', () => {
+  const g = { elements: [{ id: 'e', type: 'cylinder', width: 120, content: [{ type: 'title', text: 'Entities' }] }],
+    scenes: [{ label: 's', beats: [{ show: { e: [{ type: 'graph', nodes: ['Alice Chen', 'Zurich office'], links: [['Alice Chen', 'Zurich office']] } ] } }] }] };
+  const svg = toSvg(g, undefined, { frame: frameAt(g, 0, 800) });
+  const labels = [...svg.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*>(Alice Chen|Zurich office)<\/text>/g)].map((m) => ({ x: +m[1], y: +m[2] }));
+  assert.equal(labels.length, 2, svg.slice(0, 300));
+  assert.notEqual(labels[0].y, labels[1].y, 'labels share a line and overlap');
+  const e = resolve(g).find((x) => x.id === 'e');
+  for (const l of labels) assert.ok(l.x > e.x && l.x < e.x + e.width, `label at ${l.x} outside ${e.x}..${e.x + e.width}`);
 });
