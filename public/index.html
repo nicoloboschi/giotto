@@ -44,11 +44,23 @@
     #search:focus { border-color: var(--accent); }
     .btn { display: inline-flex; align-items: center; gap: 6px; height: 29px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; background: var(--bg); cursor: pointer; white-space: nowrap; }
     .btn:hover { background: var(--hover); }
-    .seg { display: inline-flex; height: 29px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--bg); }
-    .seg button { border: 0; padding: 0 10px; background: transparent; cursor: pointer; }
-    .seg span { display: flex; align-items: center; padding: 0 9px; color: var(--muted); border-right: 1px solid var(--line); }
-    .seg button + button { border-left: 1px solid var(--line); }
-    .seg button:hover { background: var(--hover); }
+    .menu { position: absolute; right: 10px; top: 55px; z-index: 6; min-width: 190px; padding: 4px; display: grid;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
+    .menu[hidden] { display: none; }
+    .menu button { border: 0; border-radius: 5px; padding: 7px 10px; background: transparent; cursor: pointer; text-align: left; color: var(--fg); }
+    .menu button:hover { background: var(--hover); }
+    .menu button small { color: var(--muted); margin-left: 6px; }
+    #json-dlg { width: min(720px, calc(100vw - 40px)); padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg); }
+    #json-dlg::backdrop { background: rgba(0,0,0,.35); }
+    #json-dlg form { display: grid; gap: 10px; }
+    #json-dlg [hidden] { display: none; }
+    #json-dlg strong { font-size: 14px; }
+    #json-dlg textarea { height: min(60vh, 520px); resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: var(--bg); color: var(--fg);
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+    #json-dlg .row { display: flex; align-items: center; gap: 8px; }
+    #json-dlg .row span { flex: 1; color: var(--muted); font-size: 12px; }
+    #import-btn { width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; font-weight: 400; }
+    #import-btn:hover { background: var(--hover); color: var(--fg); }
     .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.15) inset; margin-right: -3px; }
     .sws { display: inline-flex; padding-right: 3px; }
 
@@ -143,6 +155,7 @@
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
         Giotto
         <button id="theme-btn" title="Light, dark, or follow the system"></button>
+        <button id="import-btn" title="Import a diagram from its JSON">+</button>
       </div>
       <div id="kinds" role="tablist" aria-label="Show"><button data-kind="all">All</button><button data-kind="diagram">Diagrams</button><button data-kind="page">Images</button></div>
       <nav id="list"></nav>
@@ -154,8 +167,18 @@
         <input id="search" type="search" placeholder="Search  ⌘F" aria-label="Search this diagram" />
         <button id="history-btn" class="btn" title="Every change is a version; look back and restore">History</button>
         <button id="style-btn" class="btn" aria-haspopup="true"></button>
-        <div class="seg"><span>Export</span><button data-export="svg">SVG</button><button data-export="html" hidden>HTML</button><button data-export="png">PNG</button><button data-export="json">JSON</button><button id="anim-btn" hidden title="Export the scenes as a video or animated SVG">Animation</button></div>
+        <button id="export-btn" class="btn" aria-haspopup="true">Export ▾</button>
       </header>
+      <div id="export-menu" class="menu" hidden>
+        <button data-export="svg">SVG</button><button data-export="html" hidden>HTML</button><button data-export="png">PNG</button>
+        <button data-export="json">JSON <small>copy, to import elsewhere</small></button>
+        <button id="anim-btn" hidden>Animation… <small>MP4 or animated SVG</small></button>
+      </div>
+      <dialog id="json-dlg"><form method="dialog">
+        <strong id="json-title"></strong>
+        <textarea id="json-text" spellcheck="false" aria-label="Diagram JSON"></textarea>
+        <div class="row"><span id="json-status"></span><button id="json-copy" class="btn" type="button">Copy</button><button id="json-import" class="btn" type="button">Import</button><button class="btn">Close</button></div>
+      </form></dialog>
       <div id="scenes" hidden></div>
       <div id="gallery" hidden></div>
       <div id="history" class="panel" hidden></div>
@@ -886,13 +909,48 @@
       URL.revokeObjectURL(a.href);
     }
 
+    $('export-btn').onclick = () => ($('export-menu').hidden = !$('export-menu').hidden);
+    document.addEventListener('pointerdown', (ev) => {
+      if (!ev.target.closest('#export-menu, #export-btn')) $('export-menu').hidden = true;
+    });
+
+    // JSON in a dialog: copy it out of one Giotto, paste it into another's Import (the + by the logo).
+    function jsonDialog(text) {
+      const importing = text === undefined;
+      $('json-title').textContent = importing ? 'Import a diagram' : `${doc.title || current} as JSON`;
+      $('json-text').value = importing ? '' : JSON.stringify(JSON.parse(text), null, 2);
+      $('json-text').readOnly = !importing;
+      $('json-text').placeholder = importing ? 'Paste a diagram\'s JSON (Export → JSON in any Giotto)' : '';
+      $('json-status').textContent = '';
+      $('json-copy').hidden = importing;
+      $('json-import').hidden = !importing;
+      $('json-dlg').showModal();
+      importing ? $('json-text').focus() : ($('json-text').select(), ($('json-text').scrollTop = 0));
+    }
+    $('json-copy').onclick = async () => {
+      await navigator.clipboard.writeText($('json-text').value).catch(() => $('json-text').select());
+      $('json-status').textContent = 'Copied.';
+    };
+    $('import-btn').onclick = () => jsonDialog();
+    $('json-import').onclick = async () => {
+      let parsed;
+      try { parsed = JSON.parse($('json-text').value); } catch (e) { return void ($('json-status').textContent = `Not valid JSON: ${e.message}`); }
+      const res = await fetch('/api/doc', { method: 'POST', body: JSON.stringify(parsed) });
+      const out = await res.json();
+      if (!res.ok) return void ($('json-status').textContent = out.error);
+      $('json-dlg').close();
+      await refreshList();
+      await open(out.id);
+    };
+
     document.querySelectorAll('[data-export]').forEach((btn) => btn.addEventListener('click', async () => {
+      $('export-menu').hidden = true;
       if (!doc) return;
       const f = btn.dataset.export;
+      if (f === 'json') return jsonDialog(base ?? JSON.stringify(doc));
       if (doc.html !== undefined) {
         // A page: PNG drawn by Chrome on the server, or the HTML as one file.
         if (f === 'html') download(`${fileName()}.html`, pageHtml(doc, styles[styleId], { dark: isDark() }), 'text/html');
-        if (f === 'json') download(`${fileName()}.json`, base, 'application/json');
         if (f !== 'png') return;
         const res = await fetch(`/api/page.png?id=${current}&dark=${isDark() ? 1 : 0}`);
         return res.ok ? download(`${fileName()}.png`, await res.blob()) : toast((await res.json()).error);
@@ -904,7 +962,6 @@
       }
       if (f === 'svg') download(`${fileName()}.svg`, toSvg(doc, S), 'image/svg+xml');
       if (f === 'png') download(`${fileName()}.png`, await toPng(toSvg(doc, S)));
-      if (f === 'json') download(`${fileName()}.json`, base, 'application/json');
     }));
 
     // ---- scenes: play a diagram's stories (tabs, play/pause, 1x/2x) ----
@@ -999,7 +1056,8 @@
     }));
     $('anim-btn').onclick = (ev) => {
       ev.stopPropagation();
-      $('anim').hidden ? showAnimPanel() : ($('anim').hidden = true);
+      $('export-menu').hidden = true;
+      showAnimPanel();
     };
     document.addEventListener('pointerdown', (ev) => {
       if (!ev.target.closest('#anim, #anim-btn')) $('anim').hidden = true;

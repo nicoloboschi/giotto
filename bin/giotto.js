@@ -223,6 +223,18 @@ function serve() {
         broadcast(id, text);
         return send(200, { text });
       }
+      // Import: a diagram's JSON pasted in the canvas becomes a new diagram (its own id; the file's id, if any, is ignored).
+      if (route === 'POST /api/doc') {
+        const doc = await body().catch(() => null);
+        if (!doc || typeof doc !== 'object' || Array.isArray(doc) || !(Array.isArray(doc.elements) || typeof doc.html === 'string')) {
+          return send(400, { error: 'Not a Giotto diagram: expected JSON with "elements" (or "html" for an image).' });
+        }
+        const taken = new Set((await fs.readdir(dir)).map((n) => n.replace(/\.json$/, '')));
+        const nid = newId(taken), text = JSON.stringify(doc, null, 2) + '\n';
+        await fs.writeFile(fileOf(nid), text, { flag: 'wx' });
+        await history.record(nid, text, 'imported');
+        return send(200, { id: nid });
+      }
       // Only the user deletes diagrams, from the canvas (agents have no tool for it). The history stays in .history/<id>.
       if (route === 'DELETE /api/doc') {
         await fs.unlink(fileOf(id));
