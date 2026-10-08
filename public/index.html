@@ -91,6 +91,7 @@
     .xjob .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--accent) 18%, transparent); }
     .xjob .bar i { display: block; height: 100%; background: var(--accent); transition: width .6s ease; }
     .xjob.err small { color: #dc2626; }
+    .xqueue h4 { margin: 6px 2px 0; font-size: 12px; font-weight: 600; color: var(--muted); }
     #x-info { color: var(--muted); font-size: 12px; min-height: 16px; }
     .xopts { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
     .xopts label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
@@ -148,6 +149,12 @@
     #scenes .tab .bar { position: absolute; left: 8px; right: 8px; bottom: 2px; height: 2px; background: var(--accent); transform-origin: left; }
     #scenes .grow { flex: 1; }
     #scenes .btn { height: 26px; }
+    #scenes .check { display: inline-flex; align-items: center; gap: 5px; margin-right: 6px; color: var(--muted); font-size: 12.5px; cursor: pointer; user-select: none; }
+    #scenes .check input { margin: 0; accent-color: var(--accent); }
+    #scenes .steps { display: inline-flex; align-items: center; gap: 2px; margin-right: 6px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+    #scenes .steps span { min-width: 4.4em; text-align: center; }
+    #scenes .steps button { border: 0; background: transparent; color: var(--fg); cursor: pointer; font-size: 16px; line-height: 1; padding: 3px 7px; border-radius: 5px; }
+    #scenes .steps button:hover { background: var(--hover); }
     #say { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); max-width: min(760px, calc(100% - 40px)); padding: 10px 14px; border-radius: 8px;
       background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.08); font-size: 14px; line-height: 1.45; text-align: center; }
     #say[hidden] { display: none; }
@@ -267,7 +274,7 @@
     </main>
   </div>
   <script type="module">
-    import { drawContent, toSvg, fitTo, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE, cameraView, resolveFrame } from './lib/render.js';
+    import { drawContent, toSvg, fitTo, exportFrame, resolve, bounds, boundsOf, isRouted, labelOf, searchText, parentsOf, SAMPLE, cameraView, resolveFrame } from './lib/render.js';
     import { resolveStyle } from './lib/styles.js';
     import { diffDocs, slugify } from './lib/edit.js';
     import { timeline, frameAt, forExport, usesStage } from './lib/scenes.js';
@@ -319,7 +326,14 @@
       st.backgroundPosition = `${-view.x * view.zoom}px ${-view.y * view.zoom}px`;
       showPage(preview?.doc || doc);
       const showing = preview?.doc || doc; // an old version while previewing history
-      let out = showing ? drawContent(showing, S, { selected: preview ? [] : [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame, styles }) : '';
+      // The image as exports make it: background, header and footer around the diagram, with its size.
+      let frameOut = '';
+      if (showFrame && showing && showing.html === undefined && hasFrame(FS)) {
+        const f = exportFrame(showing, FS, resolveFrame(showing, FS, frame)), z = view.zoom;
+        frameOut = `<defs>${f.defs.join('')}</defs>${f.background}${f.bands}<rect x="${f.x}" y="${f.y}" width="${f.w}" height="${f.h}" rx="${f.radius}" fill="none" stroke="${FS.text}" stroke-opacity="0.3" stroke-width="${1 / z}" pointer-events="none"/>`
+          + `<text x="${f.x}" y="${f.y - 8 / z}" font-size="${11 / z}" fill="${FS.text}" fill-opacity="0.5" font-family="system-ui, sans-serif" pointer-events="none">${Math.ceil(f.w)} × ${f.h}</text>`;
+      }
+      let out = frameOut + (showing ? drawContent(showing, S, { selected: preview ? [] : [...selected], highlight: matches, current: matches[matchAt], zoom: view.zoom, frame, styles }) : '');
       // Staged change requests: numbered dashed areas.
       (staged[current] || []).forEach((it, i) => {
         const r = it.area, z = view.zoom;
@@ -340,6 +354,7 @@
         void $('say').offsetWidth;
         $('say').classList.add('fresh');
       }
+      stepCount();
       document.querySelectorAll('#scenes .bar').forEach((b, i) => (b.style.transform = `scaleX(${i === player.scene && player.tl ? Math.min(1, player.t / player.tl.scenes[i].duration) : 0})`));
       if (drag?.type === 'area') {
         const a = area(drag);
@@ -367,7 +382,8 @@
 
     function fit() {
       const r = svg.getBoundingClientRect();
-      const b = doc?.html !== undefined ? pageSize(doc) : boundsOf(placed(), S);
+      let b = doc?.html !== undefined ? pageSize(doc) : boundsOf(placed(), S);
+      if (doc && doc.html === undefined && showFrame && hasFrame(S)) { const f = exportFrame(doc, S, placed()); b = { x: f.x, y: f.y, w: f.w, h: f.h }; } // the header and footer too
       if (!b.w && !b.h) return (view = { x: -40, y: -40, zoom: 1 });
       const zoom = Math.min(1.5, (r.width - 80) / b.w, (r.height - 80) / b.h);
       view = { zoom, x: b.x + b.w / 2 - r.width / zoom / 2, y: b.y + b.h / 2 - r.height / zoom / 2 };
@@ -961,9 +977,17 @@
     const toPng = async (svgText) => (await fetch('/api/png', { method: 'POST', body: JSON.stringify({ svg: svgText }) })).blob();
 
     const fileName = () => slugify(doc?.title || current, new Set());
-    function download(name, data, type) {
+    // Every file exported from this tab, newest first, so the queue can show it and download it again
+    // (videos are listed there from the server's queue instead).
+    const exported = [];
+    function download(name, data, type, again = false) {
+      const blob = data instanceof Blob ? data : new Blob([data], { type });
+      if (!again && !name.endsWith('.mp4')) {
+        exported.unshift({ name, blob, at: new Date() });
+        queueUi();
+      }
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
+      a.href = URL.createObjectURL(blob);
       a.download = name;
       a.click();
       URL.revokeObjectURL(a.href);
@@ -1002,13 +1026,18 @@
 
     const player = { on: false, playing: false, scene: 0, t: 0, speed: 1, tl: null, last: 0 };
 
+    // The header and footer a style adds to exports, shown on the canvas when ticked (remembered per browser).
+    let showFrame = (() => { try { return localStorage.getItem('giotto-frame') === '1'; } catch { return false; } })();
+    const hasFrame = (st) => !!(st.header?.show || st.footer?.show);
+
     function sceneBar() {
-      const scenes = doc?.scenes || [];
-      $('scenes').hidden = !scenes.length;
-      if (!scenes.length) return stopPlayer();
-      player.tl = timeline(doc);
+      const scenes = doc?.html === undefined ? doc?.scenes || [] : [];
+      const framed = !!doc && doc.html === undefined && hasFrame(S);
+      $('scenes').hidden = !scenes.length && !framed;
+      if (!scenes.length) stopPlayer(true);
+      player.tl = scenes.length ? timeline(doc) : null;
       if (player.scene >= scenes.length) player.scene = 0;
-      const key = JSON.stringify([scenes.map((s) => s.label), player.on, player.playing, player.speed, player.scene]);
+      const key = JSON.stringify([scenes.map((s) => s.label), player.on, player.playing, player.speed, player.scene, framed, showFrame]);
       if ($('scenes').dataset.key === key) return;
       $('scenes').dataset.key = key;
       const tabs = scenes.map((sc, i) => {
@@ -1029,10 +1058,55 @@
       };
       const grow = document.createElement('span');
       grow.className = 'grow';
-      $('scenes').replaceChildren(...tabs, grow,
-        btn(player.playing ? '❚❚' : '▶', player.playing ? 'Pause' : 'Play', () => (player.playing ? pausePlayer() : startPlayer(player.scene, !player.on))),
-        btn(`${player.speed}×`, 'Speed', () => { player.speed = player.speed === 1 ? 2 : 1; sceneBar(); }),
-        ...(player.on ? [btn('✕', 'Back to the still diagram', stopPlayer)] : []));
+      const controls = [];
+      if (framed) {
+        const label = Object.assign(document.createElement('label'), { className: 'check', title: 'Show the header and footer your style adds to exports' });
+        const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: showFrame });
+        box.onchange = () => {
+          showFrame = box.checked;
+          try { localStorage.setItem('giotto-frame', showFrame ? '1' : '0'); } catch {}
+          sceneBar();
+          fit();
+          render();
+        };
+        label.append(box, 'Header & footer');
+        controls.push(label);
+      }
+      if (scenes.length) {
+        // Steps: each beat's final state, one at a time (paused), across scenes.
+        const steps = Object.assign(document.createElement('span'), { className: 'steps' });
+        const arrow = (text, title, dir) => Object.assign(document.createElement('button'), { textContent: text, title, onclick: () => step(dir) });
+        steps.append(arrow('‹', 'Previous step', -1), Object.assign(document.createElement('span'), { id: 'step-count' }), arrow('›', 'Next step: how it looks once it lands', 1));
+        controls.push(steps,
+          btn(player.playing ? '❚❚' : '▶', player.playing ? 'Pause' : 'Play', () => (player.playing ? pausePlayer() : startPlayer(player.scene, !player.on))),
+          btn(`${player.speed}×`, 'Speed', () => { player.speed = player.speed === 1 ? 2 : 1; sceneBar(); }),
+          ...(player.on ? [btn('✕', 'Back to the still diagram', () => stopPlayer())] : []));
+      }
+      $('scenes').replaceChildren(...tabs, grow, ...controls);
+      stepCount();
+    }
+
+    // Which step (beat) the player is on, and its narration as a tooltip.
+    function stepCount() {
+      const el = $('step-count'), sc = player.tl?.scenes[player.scene];
+      if (!el || !sc) return;
+      const i = player.on ? Math.max(0, sc.beats.findLastIndex((b) => b.start <= player.t)) : -1;
+      const text = player.on ? `${i + 1} / ${sc.beats.length}` : `– / ${sc.beats.length}`;
+      if (el.textContent !== text) (el.textContent = text), (el.parentElement.title = player.on ? sc.beats[i]?.say || '' : 'Step through each beat\'s final state');
+    }
+    // One beat back or forward, shown as it ends (everything it changes has landed), paused.
+    function step(dir) {
+      const scenes = player.tl.scenes;
+      let si = player.scene, bi = player.on ? Math.max(0, scenes[si].beats.findLastIndex((b) => b.start <= player.t)) + dir : dir > 0 ? 0 : scenes[si].beats.length - 1;
+      for (let guard = 0; (bi < 0 || bi >= scenes[si].beats.length) && guard < scenes.length + 1; guard++) {
+        si = (si + (bi < 0 ? -1 : 1) + scenes.length) % scenes.length;
+        bi = bi < 0 ? scenes[si].beats.length - 1 : 0;
+      }
+      const b = scenes[si].beats[bi];
+      if (!b) return;
+      Object.assign(player, { on: true, playing: false, scene: si, t: b.end - 1 });
+      sceneBar();
+      render();
     }
 
     function startPlayer(scene, fromStart = true) {
@@ -1045,8 +1119,10 @@
       player.playing = false;
       sceneBar();
     }
-    function stopPlayer() {
+    function stopPlayer(quiet) {
+      const was = player.on;
       Object.assign(player, { on: false, playing: false, t: 0 });
+      if (quiet) return was && render();
       if (!$('scenes').hidden) sceneBar();
       render();
     }
@@ -1128,7 +1204,7 @@
     };
     function formatNav() {
       const running = queue.filter((j) => !j.done && !j.error).length, ready = queue.filter((j) => j.done).length;
-      const about = [running && `${running} rendering`, ready && `${ready} ready`].filter(Boolean).join(' · ') || 'Nothing yet';
+      const about = [running && `${running} rendering`, ready + exported.length && `${ready + exported.length} file${ready + exported.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ') || 'Nothing yet';
       $('x-formats').replaceChildren(...formatsOf().map(([id, name, a]) => navButton(id, name, a)), document.createElement('hr'), navButton('queue', 'Queue', about));
     }
 
@@ -1273,9 +1349,10 @@
     }
     function queueUi() {
       const running = queue.filter((j) => !j.done && !j.error), ready = queue.filter((j) => j.done);
-      $('queue-btn').hidden = !queue.length;
+      $('queue-btn').hidden = !queue.length && !exported.length;
       $('queue-btn').firstChild.hidden = !running.length;
-      $('queue-btn').lastChild.textContent = running.length ? `Rendering ${jobPct(running[0])}%${running.length > 1 ? ` (+${running.length - 1})` : ''}` : `${ready.length} video${ready.length === 1 ? '' : 's'} ready`;
+      const files = ready.length + exported.length;
+      $('queue-btn').lastChild.textContent = running.length ? `Rendering ${jobPct(running[0])}%${running.length > 1 ? ` (+${running.length - 1})` : ''}` : `${files} export${files === 1 ? '' : 's'}`;
       if ($('export-dlg').open) {
         formatNav();
         renderProgress();
@@ -1294,12 +1371,14 @@
     }
     function showQueue() {
       const list = Object.assign(document.createElement('div'), { className: 'xqueue' });
-      if (!queue.length) list.append(Object.assign(document.createElement('p'), { textContent: 'No videos yet. Render one from the Video tab; it keeps going here even if you close this.' }));
+      const button = (text, onclick) => Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: text, onclick });
+      if (!queue.length && !exported.length) list.append(Object.assign(document.createElement('p'), { textContent: 'Nothing exported yet. Videos render here and keep going even if you close this; every file you download shows up here too.' }));
+      if (queue.length) list.append(Object.assign(document.createElement('h4'), { textContent: 'Videos' }));
       for (const j of queue) {
         const row = Object.assign(document.createElement('div'), { className: `xjob${j.error ? ' err' : ''}` });
         const acts = Object.assign(document.createElement('div'), { className: 'acts' });
-        if (j.done) acts.append(Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Download', onclick: async () => download(`${j.name}.mp4`, await jobBlob(j)) }));
-        if (j.done || j.error) acts.append(Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Remove', onclick: async () => { await fetch(`/api/animation?job=${j.job}`, { method: 'DELETE' }); fetched.delete(j.job); queue = queue.filter((x) => x !== j); queueUi(); } }));
+        if (j.done) acts.append(button('Download', async () => download(`${j.name}.mp4`, await jobBlob(j))));
+        if (j.done || j.error) acts.append(button('Remove', async () => { await fetch(`/api/animation?job=${j.job}`, { method: 'DELETE' }); fetched.delete(j.job); queue = queue.filter((x) => x !== j); queueUi(); }));
         row.append(Object.assign(document.createElement('b'), { textContent: `${j.name}.mp4` }), acts, Object.assign(document.createElement('small'), { textContent: `${jobAbout(j)} · ${jobState(j)}` }));
         if (!j.done && !j.error) {
           const bar = Object.assign(document.createElement('div'), { className: 'bar' });
@@ -1308,7 +1387,15 @@
         }
         list.append(row);
       }
-      setPreview(list, queue.length ? 'Videos render on this computer; finished ones stay here until you remove them.' : '');
+      if (exported.length) list.append(Object.assign(document.createElement('h4'), { textContent: 'Downloaded from this tab' }));
+      for (const f of exported) {
+        const row = Object.assign(document.createElement('div'), { className: 'xjob' });
+        const acts = Object.assign(document.createElement('div'), { className: 'acts' });
+        acts.append(button('Download again', () => download(f.name, f.blob, null, true)), button('Remove', () => { exported.splice(exported.indexOf(f), 1); queueUi(); }));
+        row.append(Object.assign(document.createElement('b'), { textContent: f.name }), acts, Object.assign(document.createElement('small'), { textContent: `${kb(f.blob.size)} · ${f.at.toLocaleTimeString()}` }));
+        list.append(row);
+      }
+      setPreview(list, queue.length ? 'Videos render on this computer; finished ones stay until you remove them. Other files stay while this tab is open.' : exported.length ? 'Files stay here while this tab is open.' : '');
     }
     pollQueue(); // videos still rendering (or ready) from before a reload
 
@@ -1358,6 +1445,7 @@
       const name = document.createElement('span');
       name.textContent = styles[styleId]?.name || styleId; // not the default's name
       $('style-btn').replaceChildren(swatches(S), name, ' ▾');
+      if (doc) sceneBar(); // the style decides whether there's a header and footer to show
       render();
       if (!$('gallery').hidden) showGallery();
     }
