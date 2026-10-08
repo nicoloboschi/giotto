@@ -108,7 +108,7 @@ if (positionals[0] === 'export' || positionals[0] === 'spec') {
 }
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
-  .update(['bin/giotto.js', 'public/app.html', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/history.js', 'lib/page.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
+  .update(['bin/giotto.js', 'public/app.html', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/frame-worker.js', 'lib/emoji.js', 'lib/render-job.js', 'lib/history.js', 'lib/page.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
   .digest('hex')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
@@ -326,8 +326,7 @@ function serve() {
         const job = String(nextJob++), file = path.join(os.tmpdir(), `giotto-${process.pid}-${job}.mp4`);
         const rate = [24, 30, 60].includes(+fps) ? +fps : 24;
         jobs.set(job, { job, id, name: String(name || id), size, fps: rate, seconds: timeline(doc).total / 1000, started: Date.now(), progress: 0, done: false, error: null, file });
-        import('../lib/video.js')
-          .then(({ toMp4 }) => toMp4(doc, style, file, { dark: !!dark, styles, size, fps: rate, onProgress: (p) => (jobs.get(job) && (jobs.get(job).progress = p)) }))
+        toMp4Isolated(doc, style, file, { dark: !!dark, styles, size, fps: rate }, (p) => jobs.get(job) && (jobs.get(job).progress = p))
           .then(async () => { const j = jobs.get(job); if (j) Object.assign(j, { done: true, progress: 1, bytes: (await fs.stat(file)).size, finished: Date.now() }); },
             (e) => jobs.get(job) && (jobs.get(job).error = e.message));
         return send(200, { job });
@@ -356,8 +355,9 @@ function serve() {
         return res.end(png);
       }
       if (route === 'POST /api/png') {
+        const png = await toPng((await body()).svg); // rendered first, so a failure is a proper error
         res.writeHead(200, { 'content-type': 'image/png' });
-        return res.end(await toPng((await body()).svg));
+        return res.end(png);
       }
       send(404, { error: 'not found' });
     } catch (e) {
@@ -499,21 +499,49 @@ Pages export as png (drawn by Chrome, which must be installed) or html (one self
 const linkTo = (id) => (opts.cloud ? null : `${url}/#${id}`);
 const seeIt = (id) => (opts.cloud ? '' : ` Give the user this link: ${id === undefined ? url : linkTo(id)}`);
 
-// PNG is drawn here from the exact SVG, so it never depends on a browser being open.
-let Resvg;
-async function toPng(svg) {
-  if (!Resvg) {
+// PNG and video are drawn from the exact SVG, so they never depend on a browser being open. Each runs in a
+// process of its own (lib/render-job.js): resvg aborts the process it runs in on some drawings, and that must
+// not take this server (the canvas, or the agent's MCP connection) down with it.
+let rendererReady = false;
+async function renderJob(job, onLine) {
+  if (!rendererReady) {
     // Installs that updated from before this dependency existed won't have it yet: fetch it once.
-    const load = async () => (await import('@resvg/resvg-js')).Resvg;
-    Resvg = await load().catch(() => {
+    await import('@resvg/resvg-js').catch(() => {
       log('installing the PNG renderer (one time)...');
       execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--silent'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
-      return load();
     });
+    rendererReady = true;
   }
-  const font = { loadSystemFonts: true };
-  const { emojify } = await import('../lib/emoji.js'); // resvg can't draw color emoji: they go in as pictures
-  return new Resvg(emojify(svg, Resvg, font, 'Arial'), { fitTo: { mode: 'zoom', value: 2 }, font }).render().asPng();
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [path.join(root, 'lib', 'render-job.js')], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const out = [], err = [];
+    let partial = '';
+    child.stdout.on('data', (d) => {
+      if (!onLine) return out.push(d);
+      partial += d;
+      const lines = partial.split('\n');
+      partial = lines.pop();
+      lines.forEach(onLine);
+    });
+    child.stderr.on('data', (d) => err.push(d));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) return resolve(Buffer.concat(out));
+      const why = Buffer.concat(err).toString();
+      reject(new Error(/panicked|fatal runtime error/.test(why) ? 'The renderer (resvg) crashed on this drawing; Giotto is fine. Something clipped may lie entirely outside the picture.' : why.trim().split('\n').slice(-3).join(' ') || `render failed (${code})`));
+    });
+    child.stdin.end(JSON.stringify(job));
+  });
+}
+const toPng = (svg) => renderJob({ kind: 'png', svg });
+// A video, with progress (0..1) as it renders; resolves to toMp4's summary.
+async function toMp4Isolated(doc, style, out, options, onProgress) {
+  let summary = null;
+  await renderJob({ kind: 'mp4', doc, style, out, options }, (line) => {
+    if (line.startsWith('progress ')) onProgress?.(+line.slice(9));
+    else if (line.startsWith('done ')) summary = JSON.parse(line.slice(5));
+  });
+  return summary;
 }
 
 // Pages are HTML, so their PNG comes from a headless Chrome. First choice: chrome-headless-shell, if Playwright or
@@ -671,8 +699,7 @@ async function callTool(name, a = {}) {
     const out = path.resolve(a.path || `${a.id ? slugify(doc.title || a.id, new Set()) : 'sample'}.${ext}`);
     let made = '';
     if (format === 'mp4') {
-      const { toMp4 } = await import('../lib/video.js');
-      const r = await toMp4(played, style, out, { dark, styles: await listStyles() });
+      const r = await toMp4Isolated(played, style, out, { dark, styles: await listStyles() });
       made = ` (${r.seconds.toFixed(1)}s, ${r.frames} frames)`;
     } else await fs.writeFile(out, format === 'svg' ? svg : format === 'png' ? png : toAnimatedSvg(played, style, { dark, styles: await listStyles() }));
     const warnings = typeof a.style === 'object' && a.style ? styleWarnings(a.style) : [];
