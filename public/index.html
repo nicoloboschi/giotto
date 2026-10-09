@@ -238,7 +238,7 @@
               <label data-opt="fps">Frame rate <span class="pick" data-key="fps"><button type="button" data-v="24">24</button><button type="button" data-v="30">30</button><button type="button" data-v="60">60</button></span></label>
               <label data-opt="speed">Speed <span class="pick" data-key="speed"><button type="button" data-v="0.5">0.5×</button><button type="button" data-v="1">1×</button><button type="button" data-v="1.5">1.5×</button><button type="button" data-v="2">2×</button></span></label>
             </div>
-            <div class="xrow"><span id="x-status"></span><button type="button" id="x-copy" class="btn">Copy</button><button type="button" id="x-go" class="btn primary">Download</button></div>
+            <div class="xrow"><span id="x-status"></span><button type="button" id="x-copy" class="btn">Copy</button><button type="button" id="x-share" class="btn" title="Upload as a secret GitHub gist: only people with the link can see it">Share link</button><button type="button" id="x-go" class="btn primary">Download</button></div>
           </div>
         </div>
       </form></dialog>
@@ -1218,6 +1218,8 @@
       for (const [k, on] of Object.entries(show)) document.querySelector(`[data-opt="${k}"]`).hidden = !on;
       $('x-copy').hidden = f !== 'json';
       $('x-go').hidden = f === 'queue';
+      $('x-share').hidden = f !== 'svg';
+      $('x-share').disabled = true;
       $('x-go').textContent = f === 'mp4' ? 'Render and download' : 'Download';
       $('x-go').disabled = true;
       $('x-status').textContent = '';
@@ -1278,7 +1280,7 @@
           xp.file = { blob, name: `${f === 'svg' ? xName() : fileName()}.${f}` };
           setPreview(img, `${img.naturalWidth}×${img.naturalHeight}${f === 'png' ? ' px' : ''} · ${kb(blob.size)}${note}`, url);
         }
-        if (live()) $('x-go').disabled = false;
+        if (live()) $('x-go').disabled = $('x-share').disabled = false;
       } catch (e) {
         if (live()) setPreview(Object.assign(document.createElement('div'), { className: 'xwait', textContent: `Couldn't draw it: ${e.message}` }));
       }
@@ -1287,6 +1289,19 @@
     $('x-copy').onclick = async () => {
       const text = await xp.file?.blob.text();
       await navigator.clipboard.writeText(text).then(() => ($('x-status').textContent = 'Copied.'), () => $('x-preview').querySelector('textarea')?.select());
+    };
+    $('x-share').onclick = async () => {
+      const st = $('x-status'), b = $('x-share');
+      b.disabled = true;
+      st.textContent = 'Uploading…';
+      try {
+        const { url } = await (await failed(await fetch('/api/share', { method: 'POST', body: JSON.stringify({ name: xName(), svg: await xp.file.blob.text() }) }))).json();
+        await navigator.clipboard.writeText(url).catch(() => {});
+        st.replaceChildren('Link copied: ', Object.assign(document.createElement('a'), { href: url, target: '_blank', textContent: url }));
+      } catch (e) {
+        st.textContent = `Couldn't share: ${e.message}`;
+      }
+      b.disabled = false;
     };
     // Video goes to the export queue: it keeps rendering if the dialog closes (or the page reloads), and downloads when done.
     $('x-go').onclick = async () => {

@@ -55,12 +55,16 @@ When the picture isn't boxes and arrows (a results card, a poster, a bar chart, 
 ```
 
 - **Let Giotto do the layout.** Put things in a `group` with `layout` (`row`, `column` or `grid`, plus `gap`, `columns`, `align`) instead of computing x/y. Leave out `width`/`height` and boxes fit their content. Groups wrap their children, draw behind them, and can nest.
-- **What goes in a box:** a `label` (`{"text"}`, or `{"title", "lines": [...], "align"}`; lines starting with `- ` are bullets), plus `tags` (pills). For richer boxes use `content` blocks: `title`, `subtitle`, `text`, `list` (`items`, `ordered`), `chips` (`items`), `chat` (`turns` of `{who, text}`), `code`, `divider`, `rows` (tagged lines: `{tag, tone, text, meta, mark}`), `graph` (`nodes`, `links`, `lit`). Any text understands `**bold**`, `` `code` `` and blank lines.
+- **What goes in a box:** a `label` (`{"text"}`, or `{"title", "lines": [...], "align"}`; lines starting with `- ` are bullets), plus `tags` (pills). For richer boxes use `content` blocks: `title`, `subtitle`, `text`, `list` (`items`, `ordered`), `chips` (`items`), `chat` (`turns` of `{who, text}`), `code`, `divider`, `rows` (tagged lines: `{tag, tone, text, meta, mark}`), `graph` (`nodes`, `links`, `lit`), `chart` (performance plots, below). Any text understands `**bold**`, `` `code` `` and blank lines.
+- **Charts:** a `chart` block draws a plot in a box. `kind`: `hbar` (comparisons with names, e.g. us vs others), `bar` (grouped bars over versions or categories), `line` (a metric over time), `hist` (a distribution: give the raw samples in `values`, Giotto bins them). Data is `labels` + `values`, or `series: [{name, tone?, values}]` for several. `unit` (`"ms"`, `"%"`, `"x"`) goes on every number; `lit: ["Giotto"]` keeps those bars bright and fades the rest; `marks` add dashed reference lines: `{at, label, tone}` (a target, an SLO) or `"p50"`, `"p99"`, `"mean"` (computed from the data). Put the chart's title in a `title` block above it.
+  `{"type": "chart", "kind": "hbar", "labels": ["Giotto", "Mermaid"], "values": [12400, 5300], "unit": "req/s", "lit": ["Giotto"]}`
 - **Notes** with `attachTo` sit beside their shape and move with it.
 - **Arrows** route themselves: straight when clear, around boxes when not. Optional: `fromSide`/`toSide` (`top`, `right`, `bottom`, `left`), `route` (`straight`, `elbow`), `labelAt` (0..1), `labelPosition` (`on`, `above`, `below`).
 - **Order:** `z` (higher on top, default 0).
 - **Legend:** `legend: {"title": "...", "items": [{"tone": "private", "text": "Private memories"}]}` on the diagram.
-- Types: `rectangle`, `ellipse`, `diamond`, `cylinder` (data at rest), `text`, `arrow`, `line`, `group` (without a label it only arranges, no frame), `note`.
+- **Text** takes `fontSize` and a `tone` for its colour. Give it a `width` and the paragraph wraps into that column; without one it stays on a single line (`\n` always breaks).
+- **Pictures:** `{"type":"image","href":"data:image/png;base64,…","width","height","fit":"contain"}`. `href` must be a data URI — a file path or an http URL draws nothing. `fit: "contain"` shows the whole picture, the default crops it to the box. The box keeps a border in the tone's stroke colour; a tone whose stroke matches the background hides it.
+- Types: `rectangle`, `ellipse`, `diamond`, `cylinder` (data at rest), `text`, `arrow`, `line`, `group` (without a label it only arranges, no frame), `note`, `image`, `terminal`.
 
 ## Scenes: diagrams that tell a story
 

@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve, toSvg, bounds, layoutWarnings } from '../lib/render.js';
 import { frameAt } from '../lib/scenes.js';
+import { fmt, ticks } from '../lib/chart.js';
+import { elementWarnings } from '../lib/edit.js';
 
 const doc = {
   elements: [
@@ -214,4 +216,21 @@ test('in a narrow card, row tags go on a line of their own so the text keeps the
   const narrow = card(200), wide = card(520);
   assert.ok(narrow.text > narrow.tag, 'narrow: the text sits under its tag');
   assert.equal(wide.text, wide.tag, 'wide: tag and text share a line');
+});
+
+test('chart blocks: bars show their values, a histogram counts every sample, and the box widens to fit', async () => {
+  const { Resvg } = await import('@resvg/resvg-js');
+  assert.equal(fmt(12400, 'req/s'), '12.4k req/s');
+  assert.equal(fmt(0.25, '%'), '0.25%');
+  assert.deepEqual(ticks(0, 180), [0, 50, 100, 150, 200]);
+  const g = { elements: [
+    { id: 'a', type: 'rectangle', content: [{ type: 'chart', kind: 'bar', labels: ['v1', 'v2'], values: [95, 10], unit: 's' }] },
+    { id: 'b', type: 'rectangle', x: 400, content: [{ type: 'chart', kind: 'hist', values: [1, 2, 2, 3, 3, 3, 9], bins: 5, marks: ['p50'] }] },
+  ] };
+  const svg = toSvg(g);
+  assert.match(svg, />95 s</);
+  assert.match(svg, />p50 3</);
+  assert.ok(resolve(g).find((e) => e.id === 'a').width >= 320);
+  assert.deepEqual(elementWarnings(g.elements, ['blue'], 'default'), []);
+  new Resvg(svg).render();
 });

@@ -6,7 +6,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { FORMAT, applyEdit, mergePatch, elementWarnings, slugify, newId, validId } from '../lib/edit.js';
@@ -108,7 +109,7 @@ if (positionals[0] === 'export' || positionals[0] === 'spec') {
 }
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
-  .update(['bin/giotto.js', 'public/app.html', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/frame-worker.js', 'lib/emoji.js', 'lib/render-job.js', 'lib/history.js', 'lib/page.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
+  .update(['bin/giotto.js', 'public/app.html', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/chart.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/frame-worker.js', 'lib/emoji.js', 'lib/render-job.js', 'lib/history.js', 'lib/page.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
   .digest('hex')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
@@ -248,7 +249,7 @@ function serve() {
       if (route === 'GET /') {
         return send(200, await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8'), 'text/html; charset=utf-8');
       }
-      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js', 'GET /lib/blocks.js', 'GET /lib/scenes.js', 'GET /lib/page.js'].includes(route)) {
+      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js', 'GET /lib/blocks.js', 'GET /lib/chart.js', 'GET /lib/scenes.js', 'GET /lib/page.js'].includes(route)) {
         return send(200, await fs.readFile(path.join(root, pathname), 'utf8'), 'text/javascript');
       }
       if (route === 'GET /api/styles') return send(200, { current: await currentStyle(), styles: await listStyles() });
@@ -330,6 +331,27 @@ function serve() {
           .then(async () => { const j = jobs.get(job); if (j) Object.assign(j, { done: true, progress: 1, bytes: (await fs.stat(file)).size, finished: Date.now() }); },
             (e) => jobs.get(job) && (jobs.get(job).error = e.message));
         return send(200, { job });
+      }
+      // Share: the exported SVG as a secret GitHub gist, linked by its raw file (only people with the link see it; viewers need no
+      // account). Uses the gh CLI and its login on this computer.
+      if (route === 'POST /api/share') {
+        const { name, svg } = await body();
+        if (typeof svg !== 'string' || !svg.includes('<svg')) return send(400, { error: 'Nothing to share: expected an SVG.' });
+        const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'giotto-share-'));
+        const file = path.join(tmp, `${slugify(name || 'diagram', new Set())}.svg`);
+        try {
+          await fs.writeFile(file, String(svg));
+          const run = (...args) => promisify(execFile)('gh', args).then((r) => r.stdout.trim());
+          const page = (await run('gist', 'create', file, '-d', `${name} (Giotto)`)).split('\n').pop();
+          // The file's raw link: served as an image, so it opens in a browser and embeds in READMEs and chats.
+          const url = await run('api', `gists/${page.split('/').pop()}`, '--jq', '.files[].raw_url');
+          return send(200, { url });
+        } catch (e) {
+          const why = e.code === 'ENOENT' ? 'Sharing needs the GitHub CLI: install gh and run "gh auth login".' : (e.stderr || e.message).trim();
+          return send(500, { error: why });
+        } finally {
+          await fs.rm(tmp, { recursive: true, force: true });
+        }
       }
       const jobView = ({ file, ...j }) => j;
       if (route === 'GET /api/animation/jobs') return send(200, [...jobs.values()].map(jobView).reverse());
