@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { timeline, frameAt, sceneWarnings, TRAVEL } from '../lib/scenes.js';
+import { timeline, frameAt, sceneWarnings, TRAVEL, countText } from '../lib/scenes.js';
 import { toSvg, resolve } from '../lib/render.js';
 import { toAnimatedSvg } from '../lib/animate.js';
 
@@ -81,4 +81,25 @@ test('changes fade instead of popping', async () => {
   assert.equal(frameAt(doc, 0, land + FADE + 1).fade.b.alpha, 1);
   assert.ok(frameAt(doc, 0, 1000 + 50).glow.get('a') < 0.2); // beat 2's light is just fading in
   assert.match(toSvg(doc, undefined, { frame: half }), /class="g-card-content" opacity="0\.\d+"/);
+});
+
+test('edits count numbers, open a scene at once, and pick up mid-slide', () => {
+  assert.equal(countText('0', '1,513,063', 0.5), '756,532');
+  assert.equal(countText('PyPI 0', 'PyPI 1.09M', 0.5), 'PyPI 0.55M');
+  assert.equal(countText('PyPI', 'npm 3', 0.5), 'npm 3'); // not just a number: lands at once
+  const d = {
+    elements: [{ id: 'bar', type: 'rectangle', x: 0, y: 0, width: 100, height: 10 }, { id: 'n', type: 'text', x: 0, y: 20, text: '50' }],
+    scenes: [{ beats: [
+      { edit: { update: [{ id: 'bar', width: 2 }, { id: 'n', text: '0' }] }, ms: 500 },
+      { edit: { update: [{ id: 'bar', width: 200 }] }, ms: 300 },
+      { edit: { update: [{ id: 'n', text: '100' }] }, ms: 1000 },
+    ] }],
+  };
+  const tl = timeline(d);
+  assert.equal(frameAt(d, 0, 10, tl).morph, undefined); // the opening edit doesn't shrink the bar on screen
+  const f = frameAt(d, 0, 900, tl); // the third edit lands while the bar (changed at 500) is still growing
+  assert.ok(f.morph.slides.bar.ms === 400); // the bar keeps sliding on its own clock
+  assert.ok(f.morph.slides.n.ms === 100);
+  const shown = +toSvg(d, undefined, { frame: frameAt(d, 0, 1000, tl) }).match(/<tspan x="0">(\d+)</)[1];
+  assert.ok(shown > 0 && shown < 100); // the number is counting, not jumping
 });
