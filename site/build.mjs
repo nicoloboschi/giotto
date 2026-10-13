@@ -9,8 +9,8 @@ const out = path.join(root, '_site');
 
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'lib'), { recursive: true });
-// The browser-side modules the player needs.
-for (const f of ['edit.js', 'render.js', 'styles.js', 'blocks.js', 'scenes.js']) fs.copyFileSync(path.join(root, 'lib', f), path.join(out, 'lib', f));
+// All of lib/, so a module the player starts importing can't be missing from the site (it was: chart.js, issue #1).
+for (const f of fs.readdirSync(path.join(root, 'lib')).filter((f) => f.endsWith('.js'))) fs.copyFileSync(path.join(root, 'lib', f), path.join(out, 'lib', f));
 for (const f of ['index.html', 'giotto-docs.json', 'styles.js', 'card.png']) fs.copyFileSync(path.join(root, 'site', f), path.join(out, f));
 fs.writeFileSync(path.join(out, '.nojekyll'), '');
 console.log(`Built ${out}`);

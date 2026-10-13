@@ -50,8 +50,9 @@ test('wrapText prefers word boundaries for English and Korean', () => {
   assert.deepEqual(wrapText('한국어 문장 확인', 35, size, charWidth), ['한국어', '문장', '확인']);
 });
 
-test('wrapText splits overlong words and unspaced Korean without losing content', () => {
-  assert.deepEqual(wrapText('abcdefgh', 15, size, charWidth), ['abc', 'def', 'gh']);
+test('wrapText keeps long Latin words whole, cuts code, and splits unspaced Korean without losing content', () => {
+  assert.deepEqual(wrapText('abcdefgh', 15, size, charWidth), ['abcdefgh']); // a Latin word stays whole; its box grows to fit
+  assert.deepEqual(wrapText('abcdefgh', 15, size, charWidth, { preserveSpace: true }), ['abc', 'def', 'gh']); // code is cut
   assert.deepEqual(wrapText('한국어문장', 20, size, charWidth), ['한국', '어문', '장']);
 });
 
