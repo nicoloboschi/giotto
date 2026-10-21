@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import http from 'node:http';
 import fs from 'node:fs/promises';
-import { watch, mkdirSync, readFileSync } from 'node:fs';
+import { watch, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -112,7 +112,7 @@ if (positionals[0] === 'export' || positionals[0] === 'spec') {
 }
 // Fingerprint of this code. A canvas left running from older code gets replaced (see ensureCanvas).
 const VERSION = createHash('sha1')
-  .update(['bin/giotto.js', 'public/app.html', 'lib/edit.js', 'lib/render.js', 'lib/styles.js', 'lib/blocks.js', 'lib/chart.js', 'lib/scenes.js', 'lib/animate.js', 'lib/video.js', 'lib/frame-worker.js', 'lib/emoji.js', 'lib/render-job.js', 'lib/history.js', 'lib/page.js', 'public/index.html'].map((f) => readFileSync(path.join(root, f))).join('\0'))
+  .update(['bin/giotto.js', 'public/app.html', 'public/index.html', ...readdirSync(path.join(root, 'lib')).filter((f) => f.endsWith('.js')).sort().map((f) => `lib/${f}`)].map((f) => readFileSync(path.join(root, f))).join('\0'))
   .digest('hex')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
@@ -253,7 +253,7 @@ function serve() {
       if (route === 'GET /') {
         return send(200, await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8'), 'text/html; charset=utf-8');
       }
-      if (['GET /lib/render.js', 'GET /lib/styles.js', 'GET /lib/edit.js', 'GET /lib/blocks.js', 'GET /lib/chart.js', 'GET /lib/scenes.js', 'GET /lib/page.js'].includes(route)) {
+      if (/^GET \/lib\/[\w-]+\.js$/.test(route)) {
         return send(200, await fs.readFile(path.join(root, pathname), 'utf8'), 'text/javascript');
       }
       if (route === 'GET /api/styles') return send(200, { current: await currentStyle(), styles: await listStyles() });
