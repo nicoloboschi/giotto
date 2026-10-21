@@ -32,6 +32,7 @@ Then ask your agent for a diagram. The first time, it sets Giotto up for you and
 ## What it does
 
 - **Live canvas** at http://localhost:4321 with every diagram in a sidebar. Move, resize and rename things by hand, search with ⌘F, undo with ⌘Z.
+  It listens on this machine only. Running the agent in a sandbox or container? Set `GIOTTO_HOST=0.0.0.0` (or `giotto --host 0.0.0.0`) and open it from outside; anyone who can reach it can edit your diagrams.
 - **No coordinates needed.** Groups lay out their children, boxes fit their text, notes stay pinned, arrows route around boxes, legends explain colors.
 - **Rich boxes:** titles, lists, tags, chat bubbles and code, with `**bold**` and `` `code` `` in any text.
 - **Request changes visually:** draw areas on the canvas, write what should change in each, and copy them all as one "Requested changes" note for your agent.

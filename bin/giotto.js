@@ -23,6 +23,7 @@ const { values: opts, positionals } = parseArgs({
   options: {
     dir: { type: 'string', default: process.env.GIOTTO_DIR || path.join(os.homedir(), '.giotto') },
     port: { type: 'string', default: process.env.GIOTTO_PORT || '4321' },
+    host: { type: 'string', default: process.env.GIOTTO_HOST || '127.0.0.1' },
     http: { type: 'string' },
     cloud: { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
@@ -52,7 +53,9 @@ if (opts.help) {
   giotto spec figure.svg
                   print the diagram a giotto SVG carries
 
-Options: --dir ~/.giotto (where diagrams live), --port 4321`);
+Options: --dir ~/.giotto (where diagrams live), --port 4321,
+  --host 127.0.0.1 (where the canvas listens; 0.0.0.0 lets other machines in, e.g. from outside a sandbox.
+  Anyone who can reach it can edit your diagrams.) The same as GIOTTO_DIR, GIOTTO_PORT, GIOTTO_HOST.`);
   process.exit(0);
 }
 
@@ -114,7 +117,8 @@ const VERSION = createHash('sha1')
   .slice(0, 12);
 const dir = path.resolve(opts.dir);
 mkdirSync(dir, { recursive: true });
-const url = `http://localhost:${opts.port}`;
+// 0.0.0.0 listens everywhere, localhost included; any other host is where we reach the canvas.
+const url = `http://${['127.0.0.1', '0.0.0.0', '::'].includes(opts.host) ? 'localhost' : opts.host}:${opts.port}`;
 const log = (...a) => console.error(...a); // stdout belongs to MCP in mcp mode
 
 // ---------- diagram files: <dir>/<id>.json = { title, elements, selectedIds } ----------
@@ -386,10 +390,11 @@ function serve() {
       send(e.code === 'ENOENT' ? 404 : 500, { error: e.message });
     }
   });
-  // Bind to localhost only: the API writes files on this machine.
+  // Localhost only unless --host says otherwise: the API writes files on this machine.
+  if (opts.host !== '127.0.0.1' && opts.host !== 'localhost') log(`Giotto canvas listening on ${opts.host}:${opts.port}: anyone who can reach it can edit your diagrams.`);
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(Number(opts.port), '127.0.0.1', resolve);
+    server.listen(Number(opts.port), opts.host, resolve);
   });
 }
 
@@ -780,7 +785,7 @@ async function ensureCanvas() {
     process.kill(info.pid);
     await waitFor(async () => !(await getInfo()));
   }
-  spawn(process.execPath, [self, '--dir', dir, '--port', opts.port], { detached: true, stdio: 'ignore' }).unref();
+  spawn(process.execPath, [self, '--dir', dir, '--port', opts.port, '--host', opts.host], { detached: true, stdio: 'ignore' }).unref();
   await waitFor(getInfo);
 }
 const HTTP_INSTRUCTIONS = `Giotto: diagrams drawn right here in the chat (create_diagram, get_diagram and edit_diagram show the diagram). One diagram per topic: list_diagrams first, create_diagram for something new, then small edit_diagram steps. Looks come from styles (list_styles, save_style, use_style), not from diagrams: give shapes a "tone" instead of hex colors.`;
