@@ -86,3 +86,7 @@ node bin/giotto.js      # canvas
 node bin/giotto.js mcp  # MCP server on stdin/stdout
 npm test
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
