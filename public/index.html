@@ -192,7 +192,9 @@
       background: var(--fg); color: var(--bg); font-size: 12.5px; pointer-events: none; transition: opacity .15s; }
     #toast[hidden] { display: block; opacity: 0; }
     #queue-btn[hidden], #fit-btn[hidden] { display: none; }
-    #fit-btn { position: absolute; right: 12px; bottom: 10px; z-index: 2; height: 30px; box-shadow: 0 2px 8px rgba(0,0,0,.08); color: var(--fg); }
+    #corner { position: absolute; right: 12px; bottom: 10px; z-index: 2; display: flex; gap: 6px; }
+    #corner .btn { height: 30px; box-shadow: 0 2px 8px rgba(0,0,0,.08); color: var(--fg); }
+    #stage:fullscreen { background: var(--bg); }
     #hint { position: absolute; left: 12px; bottom: 8px; color: var(--muted); font-size: 11.5px; pointer-events: none; }
     @media (max-width: 900px) { aside { width: 190px; } #search { width: 110px; } #hint, #status { display: none; } }
   </style>
@@ -268,8 +270,11 @@
           <ol id="tray-list"></ol>
           <div class="row"><button id="tray-clear" class="btn">Clear</button><button id="tray-copy" class="btn primary">Copy requested changes</button></div>
         </div>
-        <button id="fit-btn" class="btn" title="Fit everything in view (Shift+1)" aria-label="Fit everything in view"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>Fit</button>
-        <div id="hint">Drag a box to move it · drag over an area to request a change · double-click to rename · [ ] send back / bring front · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo</div>
+        <div id="corner">
+          <button id="fs-btn" class="btn" title="Full screen (F)" aria-label="Full screen"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 6V2h4M2 2l4 4M10 2h4v4M14 2l-4 4M14 10v4h-4M14 14l-4-4M6 14H2v-4M2 14l4-4"/></svg></button>
+          <button id="fit-btn" class="btn" title="Fit everything in view (Shift+1)" aria-label="Fit everything in view"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>Fit</button>
+        </div>
+        <div id="hint">Drag a box to move it · drag over an area to request a change · double-click to rename · [ ] send back / bring front · scroll or Space+drag to pan · ⌘/Ctrl + scroll to zoom · ⌘Z undo · F full screen</div>
       </div>
     </main>
   </div>
@@ -657,8 +662,14 @@
     // Everything in view: the button, or Shift+1 (as in design tools).
     const fitAll = () => (fit(), render());
     $('fit-btn').onclick = fitAll;
+    // Full screen: the diagram alone, filling the whole screen (the button, or F; Esc leaves).
+    const toggleFull = () => document.fullscreenElement ? document.exitFullscreen() : $('stage').requestFullscreen();
+    $('fs-btn').onclick = toggleFull;
+    document.addEventListener('fullscreenchange', () => requestAnimationFrame(fitAll));
     document.addEventListener('keydown', (ev) => {
-      if (ev.shiftKey && ev.code === 'Digit1' && !ev.metaKey && !ev.ctrlKey && !ev.target.closest('input, textarea, [contenteditable]')) ev.preventDefault(), fitAll();
+      if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.target.closest('input, textarea, [contenteditable]')) return;
+      if (ev.shiftKey && ev.code === 'Digit1') ev.preventDefault(), fitAll();
+      else if (!ev.shiftKey && ev.code === 'KeyF') ev.preventDefault(), toggleFull();
     });
     for (const ev of ['pointerdown', 'keydown', 'wheel']) document.addEventListener(ev, () => (lastInput = Date.now()), true);
 
